@@ -19,7 +19,7 @@ RUN mkdir -p /hf          && chown -R llama-runtime:users /hf
 
 WORKDIR /llama
 USER root
-ARG LEMONADE_LLAMACPP_VERSION=b1197
+ARG LEMONADE_LLAMACPP_VERSION=b1212
 ADD https://github.com/lemonade-sdk/llamacpp-rocm/releases/download/${LEMONADE_LLAMACPP_VERSION}/llama-${LEMONADE_LLAMACPP_VERSION}-ubuntu-rocm-gfx1151-x64.zip llama-rocm.zip
 RUN    \
        unzip llama-rocm.zip \
@@ -38,6 +38,10 @@ ENV HF_HUB_DISABLE_XET=1
 ENV HF_HUB_CACHE=/hf/hub
 ENV HF_HOME=/hf
 ENV HSA_OVERRIDE_GFX_VERSION=11.5.1
-ENV AMD_SERIALIZE_KERNEL=1
 ENV GGML_CUDA_ENABLE_UNIFIED_MEMORY=1
+ENV ROCBLAS_USE_HIPBLASLT=0
+ENV HIP_VISIBLE_DEVICES=0
+ENV LLAMA_LOG_COLORS=1
+ENV LLAMA_LOG_TIMESTAMPS=1
+ENV LLAMA_LOG_PREFIX=1
 ENTRYPOINT ["/llama/llama-server", "--models-preset", "/llama/llamacpp_presets.ini", "--models-max", "4", "--models-dir", "/models/", "--models-autoload", "--no-webui", "--host", "::", "--port", "8000"]
