@@ -19,7 +19,7 @@ RUN mkdir -p /hf          && chown -R llama-runtime:users /hf
 
 WORKDIR /llama
 USER root
-ARG LEMONADE_LLAMACPP_VERSION=b1212
+ARG LEMONADE_LLAMACPP_VERSION=b1215
 ADD https://github.com/lemonade-sdk/llamacpp-rocm/releases/download/${LEMONADE_LLAMACPP_VERSION}/llama-${LEMONADE_LLAMACPP_VERSION}-ubuntu-rocm-gfx1151-x64.zip llama-rocm.zip
 RUN    \
        unzip llama-rocm.zip \
