@@ -13,6 +13,9 @@ variable "DOCKER_REPOSITORY" {
 variable "DOCKER_IMAGE_NAME" {
   default = "llama.cpp"
 }
+variable "LEMONADE_LLAMACPP_VERSION" {
+  default = "b1271"
+}
 variable "DOCKER_TAG" {
   default = "latest"
 }
@@ -51,7 +54,8 @@ target "containers" {
   platforms = [
     "linux/amd64"
   ]
-  environment = {
+  args = {
     CACHEBUST = "1"
+    LEMONADE_LLAMACPP_VERSION = "${LEMONADE_LLAMACPP_VERSION}"
   }
 }
