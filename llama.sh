@@ -15,7 +15,7 @@ exec docker run \
     --ulimit stack=67108864:67108864 \
     --group-add=video \
     --ipc=host \
-    --shm-size=128GB \
+    --shm-size=4g \
     --cap-add=SYS_PTRACE \
     --security-opt seccomp=unconfined \
     --group-add=109 \
