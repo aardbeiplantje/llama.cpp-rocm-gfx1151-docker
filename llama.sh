@@ -4,7 +4,7 @@ LLAMA_DOCKER_IMAGE=${LLAMA_DOCKER_IMAGE:-"registry.aardbeiplantje.link/ai/llama.
 HERE="$BASH_SOURCE"
 HERE="${HERE%/*}"
 MODELS_DIR=${MODELS_DIR?"Please set MODELS_DIR to the directory where your llama.cpp models are stored (e.g., /models)"}
-LLAMA_PRESETS="${LLAMA_PRESETS:-$HERE/llama_server.ini}"
+LLAMA_PRESETS="${LLAMA_PRESETS:-$HERE/llamacpp_presets.ini}"
 docker rm llama || true
 exec docker run \
     --pull=always \
