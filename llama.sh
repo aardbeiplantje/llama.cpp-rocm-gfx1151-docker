@@ -8,6 +8,7 @@ LLAMA_PRESETS="${LLAMA_PRESETS:-$HERE/llamacpp_presets.ini}"
 docker rm llama || true
 exec docker run \
     --pull=always \
+    --restart=unless-stopped \
     --name llama \
     --detach \
     --network=host \
