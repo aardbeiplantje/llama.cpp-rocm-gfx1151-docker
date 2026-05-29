@@ -16,6 +16,18 @@ model_list:
         num_ctx: 98304
         options:
           include_special: true
+  - model_name: Qwen3.6-35B-A3B-UD-Q8_K_XL
+    litellm_params:
+      model: openai/Qwen3.6-35B-A3B-UD-Q8_K_XL
+      api_base: http://[$ip]:8000
+      api_key: "not-needed"
+      temperature: 0.6
+      max_tokens: 16384
+      drop_params: true
+      extra_body:
+        num_ctx: 98304
+        options:
+          include_special: true
   - model_name: Nemotron-3-Nano-30B-A3B-Q8_0
     litellm_params:
       model: openai/Nemotron-3-Nano-30B-A3B-Q8_0
