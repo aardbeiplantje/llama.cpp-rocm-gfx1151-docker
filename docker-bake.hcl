@@ -14,7 +14,7 @@ variable "DOCKER_IMAGE_NAME" {
   default = "llama.cpp"
 }
 variable "LEMONADE_LLAMACPP_VERSION" {
-  default = "b1271"
+  default = "b1282"
 }
 variable "DOCKER_TAG" {
   default = "latest"

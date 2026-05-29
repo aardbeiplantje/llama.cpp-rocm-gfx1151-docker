@@ -1,2 +1,5 @@
 *~
 .*~
+
+# Local temp directory
+.tmp/
