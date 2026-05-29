@@ -23,7 +23,7 @@ exec docker run --rm \
     --device=/dev/dri \
     --group-add=video \
     --ipc=host \
-    --shm-size=128GB \
+    --shm-size=4g \
     --cap-add=SYS_PTRACE \
     --security-opt seccomp=unconfined \
     --group-add=109 \
