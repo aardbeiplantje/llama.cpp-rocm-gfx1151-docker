@@ -1,8 +1,11 @@
 group "default" {
-  targets = ["release"]
+  targets = ["local"]
 }
 group "release" {
   targets = ["containers"]
+}
+group "local" {
+  targets = ["_local"]
 }
 variable "DOCKER_REGISTRY" {
   default = "ghcr.io"
@@ -22,6 +25,25 @@ variable "DOCKER_TAG" {
 variable "GFX_VERSION" {
   default = "-gfx1151"
 }
+target "_common" {
+  context = "."
+  dockerfile = "Dockerfile"
+  platforms = ["linux/amd64"]
+  networks = ["host"]
+  buildkit = true
+}
+
+target "_local" {
+  inherits = ["_common"]
+  target = "runtime"
+  tags = [
+    "local/${DOCKER_REPOSITORY}/${DOCKER_IMAGE_NAME}${GFX_VERSION}:${DOCKER_TAG}",
+  ]
+  output = [
+    "type=docker,name=local/${DOCKER_REPOSITORY}/${DOCKER_IMAGE_NAME}${GFX_VERSION}:${DOCKER_TAG}"
+  ]
+}
+
 target "containers" {
   pull = true
   name = "containers-${env}"

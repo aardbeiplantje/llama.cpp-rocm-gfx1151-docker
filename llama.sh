@@ -1,13 +1,12 @@
 #!/bin/bash
-docker stop llama || true
-LLAMA_DOCKER_IMAGE=${LLAMA_DOCKER_IMAGE:-"registry.aardbeiplantje.link/ai/llama.cpp-gfx1151:latest"}
+MODELS_DIR=${MODELS_DIR?"Please set MODELS_DIR to the directory where your llama.cpp models are stored (e.g., /models)"}
+LLAMA_DOCKER_IMAGE=${LLAMA_DOCKER_IMAGE:-local/ai/llama.cpp-gfx1151:latest}
 HERE="$BASH_SOURCE"
 HERE="${HERE%/*}"
-MODELS_DIR=${MODELS_DIR?"Please set MODELS_DIR to the directory where your llama.cpp models are stored (e.g., /models)"}
 LLAMA_PRESETS="${LLAMA_PRESETS:-$HERE/llamacpp_presets.ini}"
-docker rm llama || true
+docker stop llama || true
+docker rm llama   || true
 exec docker run \
-    --pull=always \
     --restart=unless-stopped \
     --name llama \
     --detach \
