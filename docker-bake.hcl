@@ -17,7 +17,7 @@ variable "DOCKER_IMAGE_NAME" {
   default = "llama.cpp"
 }
 variable "LEMONADE_LLAMACPP_VERSION" {
-  default = "b1282"
+  default = "b1293"
 }
 variable "DOCKER_TAG" {
   default = "latest"
@@ -31,11 +31,16 @@ target "_common" {
   platforms = ["linux/amd64"]
   networks = ["host"]
   buildkit = true
+  target = "runtime"
+  args = {
+    CACHEBUST = "1"
+    LEMONADE_LLAMACPP_VERSION = "${LEMONADE_LLAMACPP_VERSION}"
+  }
+  progress = ["plain", "tty"]
 }
 
 target "_local" {
   inherits = ["_common"]
-  target = "runtime"
   tags = [
     "local/${DOCKER_REPOSITORY}/${DOCKER_IMAGE_NAME}${GFX_VERSION}:${DOCKER_TAG}",
   ]
@@ -45,12 +50,12 @@ target "_local" {
 }
 
 target "containers" {
+  inherits = ["_common"]
   pull = true
   name = "containers-${env}"
   matrix = {
     env = ["release"]
   }
-  progress = ["plain", "tty"]
   tags = [
     "${DOCKER_REGISTRY}/${DOCKER_REPOSITORY}/${DOCKER_IMAGE_NAME}${GFX_VERSION}:${DOCKER_TAG}",
   ]
@@ -64,20 +69,8 @@ target "containers" {
     "type=registry,ref=${DOCKER_REGISTRY}/${DOCKER_REPOSITORY}/${DOCKER_IMAGE_NAME}${GFX_VERSION}:cache",
     "type=registry,ref=${DOCKER_REGISTRY}/${DOCKER_REPOSITORY}/${DOCKER_IMAGE_NAME}${GFX_VERSION}:${DOCKER_TAG}"
   ]
-  target = "runtime"
-  buildkit = true
   attest = [
     "type=provenance,mode=max",
     "type=sbom",
   ]
-  context = "."
-  dockerfile = "Dockerfile"
-  networks = ["host"]
-  platforms = [
-    "linux/amd64"
-  ]
-  args = {
-    CACHEBUST = "1"
-    LEMONADE_LLAMACPP_VERSION = "${LEMONADE_LLAMACPP_VERSION}"
-  }
 }
