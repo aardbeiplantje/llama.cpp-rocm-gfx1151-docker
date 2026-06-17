@@ -19,13 +19,13 @@ RUN mkdir -p /hf          && chown -R llama-runtime:users /hf
 
 WORKDIR /llama
 USER root
-ARG LEMONADE_LLAMACPP_VERSION=b1292
-ADD https://github.com/lemonade-sdk/llamacpp-rocm/releases/download/${LEMONADE_LLAMACPP_VERSION}/llama-${LEMONADE_LLAMACPP_VERSION}-ubuntu-rocm-gfx1151-x64.zip llama-rocm.zip
+ARG LEMONADE_LLAMACPP_VERSION=b9586
+ADD https://github.com/lemonade-sdk/llama.cpp/releases/download/${LEMONADE_LLAMACPP_VERSION}/llama-${LEMONADE_LLAMACPP_VERSION}-bin-ubuntu-rocm-7.13-x64.tar.gz llama-rocm.tar.gz
 RUN    \
-       unzip llama-rocm.zip \
+       tar xvf llama-rocm.tar.gz \
     && chmod +x llama* \
     && chown -R llama-runtime:users . \
-    && rm -f llama-rocm.zip
+    && rm -f llama-rocm.tar.gz
 
 COPY llamacpp_presets.ini llamacpp_presets.ini
 
