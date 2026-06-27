@@ -2,3 +2,9 @@
 README.md
 LICENSE
 docker-bake.hcl
+AGENTS.md
+.dockerignore
+.gitignore
+.*
+Dockerfile
+llama.sh
