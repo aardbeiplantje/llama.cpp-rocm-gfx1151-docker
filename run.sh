@@ -9,7 +9,7 @@ while [ "$(docker ps -a -q -f name=^llama$)" ]; do
     docker rm llama >/dev/null 2>&1 || true
     sleep 1
 done
-exec docker run \
+id=$(docker run \
     --name llama \
     --rm \
     --detach \
@@ -32,8 +32,11 @@ exec docker run \
     -v $LLAMA_PRESETS:/llama/llamacpp_presets.ini \
     -v llama.cpp-data:/llama.cpp:rw \
     -v $HF_HOME:/hf:rw \
+    -e XDG_CACHE_HOME=/dev/shm \
     -e HF_HOME=/hf \
     -e HF_TOKEN \
     -e HF_HUB_CACHE=/hf/hub \
     $LLAMA_DOCKER_IMAGE \
-        "$@"
+    "$@")
+echo $id
+docker logs -f $id

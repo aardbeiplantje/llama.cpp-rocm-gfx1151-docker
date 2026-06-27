@@ -22,23 +22,23 @@ export LLAMA_LOG_TIMESTAMPS=${LLAMA_LOG_TIMESTAMPS:-1}
 export LLAMA_LOG_PREFIX=${LLAMA_LOG_PREFIX:-1}
 export HSA_FORCE_FINE_GRAIN_PCIE=1
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/llama/bin
+export XDG_CACHE_HOME=/hf
 
 if [ "$1" = "bash" ] || [ "$1" = "/bin/bash" ]; then
     exec "$@"
 fi
-if [ $# -eq 0 ]; then
-    exec /llama/bin/llama-server \
-        --models-preset /llama/llamacpp_presets.ini \
-        --models-max 4 \
-        --models-dir /models/ \
-        --models-autoload \
-        --verbose \
-        --mlock \
-        --split-mode none \
-        --log-verbosity 3 \
-        --no-webui \
-        --host :: \
-        --port 8000
-fi
+set -- /llama/bin/llama-server \
+    --models-preset /llama/llamacpp_presets.ini \
+    --models-max 4 \
+    --models-dir /models/ \
+    --models-autoload \
+    --verbose \
+    --mlock \
+    --split-mode none \
+    --log-verbosity 2 \
+    --no-webui \
+    --host :: \
+    --port 8000 \
+    "$@"
 
 exec "$@"
