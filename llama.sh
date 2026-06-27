@@ -1,44 +1,44 @@
 #!/bin/bash
-MODELS_DIR=${MODELS_DIR?"Please set MODELS_DIR to the directory where your llama.cpp models are stored (e.g., /models)"}
-LLAMA_DOCKER_IMAGE=${LLAMA_DOCKER_IMAGE:-local/ai/llama.cpp-gfx1151:latest}
-HERE="$BASH_SOURCE"
-HERE="${HERE%/*}"
-LLAMA_PRESETS="${LLAMA_PRESETS:-$HERE/llamacpp_presets.ini}"
-docker stop llama >/dev/null 2>&1 || true
-while [ "$(docker ps -a -q -f name=^llama$)" ]; do
-    docker rm llama >/dev/null 2>&1 || true
-    sleep 1
-done
-exec docker run \
-    --name llama \
-    --rm \
-    --detach \
-    --network=host \
-    --ulimit memlock=-1:-1 \
-    --ulimit stack=67108864:67108864 \
-    --group-add=video \
-    --ipc=host \
-    --cap-add=SYS_PTRACE \
-    --cap-add=SYS_ADMIN \
-    --security-opt seccomp=unconfined \
-    --group-add=109 \
-    --group-add=986 \
-    --group-add=992 \
-    --device /dev/kfd \
-    --device /dev/dri \
-    --tmpfs /tmp:rw,suid,exec,size=1G \
-    --tmpfs /var/tmp:rw,suid,exec,size=1G \
-    -v $MODELS_DIR:/models:ro \
-    -v $LLAMA_PRESETS:/llama/llamacpp_presets.ini \
-    -v llama.cpp-data:/llama.cpp:rw \
-    -v $HF_HOME:/hf:rw \
-    -e HF_HOME=/hf \
-    -e HF_TOKEN \
-    -e HF_HUB_CACHE=/hf/hub \
-    $LLAMA_DOCKER_IMAGE \
+
+export ROCM_PATH=${ROCM_PATH:-/opt/rocm}
+export LD_LIBRARY_PATH=${ROCM_PATH}/lib
+export PATH=${ROCM_PATH}/bin:$PATH
+export HSA_OVERRIDE_GFX_VERSION=11.5.1
+export GGML_CUDA_ENABLE_UNIFIED_MEMORY=1
+export ROCBLAS_USE_HIPBLASLT=0
+export HIP_VISIBLE_DEVICES=0
+export HSA_ENABLE_SDMA=0
+export GGML_HIP_FORCE_RS_GPU=1
+export GGML_HIP_FORCE_KV_GPU=1
+export GGML_HIP_GRAPHS=0
+export GGML_HIP_ALLOC_GRAPH_RESERVE=2048
+export ROCM_METADATA_WAIT_TIMEOUT=100
+export ROCM_ALLOW_INT8_MIXED_PRECISION=1
+export HIPBLASLT_LOG_MASK=32
+export HIP_FORCE_DEV_KERNARG=1
+export GGML_CUDA_FORCE_MMQ=1
+export LLAMA_LOG_COLORS=${LLAMA_LOG_COLORS:-1}
+export LLAMA_LOG_TIMESTAMPS=${LLAMA_LOG_TIMESTAMPS:-1}
+export LLAMA_LOG_PREFIX=${LLAMA_LOG_PREFIX:-1}
+export HSA_FORCE_FINE_GRAIN_PCIE=1
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/llama/bin
+
+if [ "$1" = "bash" ] || [ "$1" = "/bin/bash" ]; then
+    exec "$@"
+fi
+if [ $# -eq 0 ]; then
+    exec /llama/bin/llama-server \
+        --models-preset /llama/llamacpp_presets.ini \
+        --models-max 4 \
+        --models-dir /models/ \
+        --models-autoload \
         --verbose \
         --mlock \
         --split-mode none \
         --log-verbosity 3 \
-        --webui \
-        "$@"
+        --no-webui \
+        --host :: \
+        --port 8000
+fi
+
+exec "$@"
