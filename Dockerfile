@@ -7,10 +7,21 @@ RUN apt update && apt install -y --no-install-recommends \
     libssl3 \
     libgomp1 \
     libatomic1 \
-    && rm -rf /var/lib/apt/lists/*
-
-ARG CACHEBUST=1
-RUN apt update && apt upgrade -y \
+    make \
+    gcc \
+    g++ \
+    git \
+    cmake \
+    ninja-build \
+    build-essential \
+    clang \
+    pkg-config \
+    glslc \
+    vulkan-tools \
+    libvulkan-dev \
+    spirv-headers \
+    ccache \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd -N -M -d /llama-server/ -u 1000 llama-runtime
@@ -18,21 +29,28 @@ RUN mkdir -p /models      && chown -R llama-runtime:users /models
 RUN mkdir -p /hf          && chown -R llama-runtime:users /hf
 
 WORKDIR /llama
-USER root
-ARG LEMONADE_LLAMACPP_VERSION=b9586
-ADD https://github.com/lemonade-sdk/llama.cpp/releases/download/${LEMONADE_LLAMACPP_VERSION}/llama-${LEMONADE_LLAMACPP_VERSION}-bin-ubuntu-rocm-7.13-x64.tar.gz llama-rocm.tar.gz
-RUN    \
-       tar xvf llama-rocm.tar.gz \
-    && chmod +x llama* \
-    && chown -R llama-runtime:users . \
-    && rm -f llama-rocm.tar.gz
+RUN git clone --depth=1 https://github.com/aardbeiplantje/rocmfp4-llama.git
+ADD https://repo.amd.com/rocm/tarball/therock-dist-linux-gfx1151-7.13.0.tar.gz /tmp/rocm.tar.gz
+RUN mkdir -p /opt/rocm \
+     && cd /opt/rocm \
+     && cat /tmp/rocm.tar.gz|tar xzf -
+ENV ROCM_PATH=/opt/rocm
+ENV LD_LIBRARY_PATH=${ROCM_PATH}/lib
+ENV PATH=${ROCM_PATH}/bin:$PATH
+RUN \
+    cd rocmfp4-llama && \
+    git checkout mtp-rocmfp4-strix && \
+    env JOBS=32 scripts/build-strix-rocmfp4-mtp.sh && \
+    mv build-strix-rocmfp4 / && \
+    rm -rf /llama && mv /build-strix-rocmfp4 /llama && \
+    rm -rf rocmfp4-llama
+
 
 COPY llamacpp_presets.ini llamacpp_presets.ini
 
 RUN mkdir -p /llama.cpp/slots && chown -R llama-runtime:users /llama.cpp/
 USER llama-runtime
 WORKDIR /models
-ENV TMPDIR=/dev/shm
 ENV HF_HUB_ENABLE_HF_TRANSFER=0
 ENV HF_HUB_DISABLE_XET=1
 ENV HF_HUB_CACHE=/hf/hub
@@ -55,4 +73,5 @@ ENV LLAMA_LOG_COLORS=1
 ENV LLAMA_LOG_TIMESTAMPS=1
 ENV LLAMA_LOG_PREFIX=1
 ENV HSA_FORCE_FINE_GRAIN_PCIE=1
-ENTRYPOINT ["/llama/llama-server", "--models-preset", "/llama/llamacpp_presets.ini", "--models-max", "4", "--models-dir", "/models/", "--models-autoload", "--no-webui", "--host", "::", "--port", "8000"]
+ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/llama/bin
+ENTRYPOINT ["/llama/bin/llama-server", "--models-preset", "/llama/llamacpp_presets.ini", "--models-max", "4", "--models-dir", "/models/", "--models-autoload", "--no-webui", "--host", "::", "--port", "8000"]
