@@ -40,7 +40,7 @@ cmake \
     \
     `# === Core HIP/ROCm Configuration ===` \
     -DGGML_HIP_FORCE_MMQ=ON \
-    -DGGML_VULKAN=ON \
+    -DGGML_VULKAN=OFF \
     -DGGML_NATIVE=ON \
     -DGGML_HIP=ON \
     -DGGML_HIPBLAS=ON \
@@ -98,7 +98,7 @@ cmake \
     -DCMAKE_HIP_COMPILER=$ROCM_PATH/llvm/bin/clang++ \
     -DCMAKE_C_FLAGS="-march=native -O3" \
     -DCMAKE_CXX_FLAGS="-march=native -O3 -Wno-nan-infinity-disabled" \
-    -DCMAKE_HIP_FLAGS="-O3 -Wno-nan-infinity-disabled --rocm-device-lib-path=$HIP_DEVICE_LIB_PATH --rocm-path=$ROCM_PATH -Xarch_device -mwavefrontsize64=false -isystem $ROCM_PATH/include $HIP_EXTRA_FLAGS"
+    -DCMAKE_HIP_FLAGS="-Wno-nan-infinity-disabled --rocm-device-lib-path=$HIP_DEVICE_LIB_PATH --rocm-path=$ROCM_PATH -Xarch_device -mwavefrontsize64=false -isystem $ROCM_PATH/include $HIP_EXTRA_FLAGS"
 
 # Build with all cores
 echo ""
