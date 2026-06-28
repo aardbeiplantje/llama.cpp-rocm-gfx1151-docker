@@ -17,9 +17,6 @@ export ROCM_ALLOW_INT8_MIXED_PRECISION=1
 export HIPBLASLT_LOG_MASK=32
 export HIP_FORCE_DEV_KERNARG=1
 export GGML_CUDA_FORCE_MMQ=1
-export LLAMA_LOG_COLORS=${LLAMA_LOG_COLORS:-1}
-export LLAMA_LOG_TIMESTAMPS=${LLAMA_LOG_TIMESTAMPS:-1}
-export LLAMA_LOG_PREFIX=${LLAMA_LOG_PREFIX:-1}
 export HSA_FORCE_FINE_GRAIN_PCIE=1
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/llama/bin
 export XDG_CACHE_HOME=/hf
@@ -28,10 +25,15 @@ if [ "$1" = "bash" ] || [ "$1" = "/bin/bash" ]; then
     exec "$@"
 fi
 set -- /llama/bin/llama-server \
-    --models-preset /llama/llamacpp_presets.ini \
+    --models-preset /llamacpp_presets.ini \
     --models-max 4 \
     --models-dir /models/ \
     --models-autoload \
+    --log-timestamps \
+    --log-prefix \
+    --log-colors on \
+    -fit off \
+    --embeddings \
     --verbose \
     --mlock \
     --split-mode none \

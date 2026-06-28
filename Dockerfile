@@ -1,4 +1,4 @@
-FROM debian:trixie-slim AS runtime
+FROM debian:trixie-slim AS base
 WORKDIR /tmp
 RUN apt update && apt install -y --no-install-recommends \
     ca-certificates \
@@ -17,42 +17,58 @@ RUN apt update && apt install -y --no-install-recommends \
     clang \
     pkg-config \
     glslc \
+    glslang-tools \
     vulkan-tools \
     libvulkan-dev \
     spirv-headers \
-    ccache \
-    strace \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+FROM base AS builder
+
+WORKDIR /llama-build
+ADD https://repo.amd.com/rocm/tarball/therock-dist-linux-gfx1151-7.13.0.tar.gz /tmp/rocm.tar.gz
+RUN mkdir -p /opt/rocm \
+    && tar -xzf /tmp/rocm.tar.gz -C /opt/rocm \
+    && rm /tmp/rocm.tar.gz
+RUN git clone --depth=1 --single-branch -b nemotron-mtp-rocmfp4-strix https://github.com/aardbeiplantje/rocmfp4-llama.git
+RUN git clone --depth=1 --single-branch -b master https://github.com/ggml-org/llama.cpp.git
+ENV ROCM_PATH=/opt/rocm
+ENV LD_LIBRARY_PATH=${ROCM_PATH}/lib
+ENV PATH=${ROCM_PATH}/bin:$PATH
+ARG W=llama.cpp
+COPY build_llama.cpp.sh /llama-build
+RUN \
+    cd $W && \
+    env JOBS=32 bash /llama-build/build_llama.cpp.sh && \
+    mv build /llama && \
+    rm -rf $W
+
+FROM base AS runtime
+WORKDIR /llama
+ADD https://repo.amd.com/rocm/tarball/therock-dist-linux-gfx1151-7.13.0.tar.gz /tmp/rocm.tar.gz
+RUN mkdir -p /opt/rocm \
+    && tar -xzf /tmp/rocm.tar.gz -C /opt/rocm \
+        --wildcards \
+        "*/lib/*.so*" \
+        "*/lib/rocblas/*" \
+        "*/lib/hipblaslt/*" \
+    && rm /tmp/rocm.tar.gz
+COPY --from=builder /llama /llama
 
 RUN useradd -N -M -d /llama-server/ -u 1000 llama-runtime
 RUN mkdir -p /models      && chown -R llama-runtime:users /models
 RUN mkdir -p /hf          && chown -R llama-runtime:users /hf
 
-WORKDIR /llama
-RUN git clone --depth=1 --single-branch -b nemotron-mtp-rocmfp4-strix https://github.com/aardbeiplantje/rocmfp4-llama.git
-ADD https://repo.amd.com/rocm/tarball/therock-dist-linux-gfx1151-7.13.0.tar.gz /tmp/rocm.tar.gz
-RUN mkdir -p /opt/rocm \
-     && cd /opt/rocm \
-     && cat /tmp/rocm.tar.gz|tar xzf -
-ENV ROCM_PATH=/opt/rocm
-ENV LD_LIBRARY_PATH=${ROCM_PATH}/lib
-ENV PATH=${ROCM_PATH}/bin:$PATH
-COPY build_llama.cpp.sh /llama
-RUN \
-    cd rocmfp4-llama && \
-    env JOBS=32 bash /llama/build_llama.cpp.sh && \
-    mv build / && \
-    rm -rf /llama && mv /build /llama && \
-    rm -rf rocmfp4-llama
-
-
-COPY llamacpp_presets.ini llamacpp_presets.ini
+COPY llamacpp_presets.ini /
 COPY llama.sh /
 
 RUN mkdir -p /llama.cpp/slots && chown -R llama-runtime:users /llama.cpp/
 USER llama-runtime
 WORKDIR /models
+ENV ROCM_PATH=/opt/rocm
+ENV LD_LIBRARY_PATH=${ROCM_PATH}/lib
+ENV PATH=${ROCM_PATH}/bin:$PATH
 ENV HF_HUB_ENABLE_HF_TRANSFER=0
 ENV HF_HUB_DISABLE_XET=1
 ENV HF_HUB_CACHE=/hf/hub
