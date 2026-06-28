@@ -25,7 +25,6 @@ fi
 exec $BIND_CMD ${LLAMA_CPP_DIR}/bin/llama-cli \
     -lv 1 \
     --context-shift \
-    -dev Vulkan0 \
     --jinja \
     -ctk f16 \
     -ctv f16 \
@@ -42,7 +41,6 @@ exec $BIND_CMD ${LLAMA_CPP_DIR}/bin/llama-cli \
     -ub 256 \
     -t 16 \
     -tb 16 \
-    -cpent 256 \
     -ctxcp 32 \
     --cache-ram 65536 \
     -sm none \
@@ -53,7 +51,5 @@ exec $BIND_CMD ${LLAMA_CPP_DIR}/bin/llama-cli \
     --spec-draft-n-min 0 \
     --spec-draft-p-min 0.0 \
     --spec-draft-p-split 0.10 \
-    --chat-template-file chat_template.jinja \
     --reasoning on \
-    --chat-template-kwargs '{"preserve_thinking": true}' \
     "$@"
