@@ -30,7 +30,7 @@ RUN mkdir -p /models      && chown -R llama-runtime:users /models
 RUN mkdir -p /hf          && chown -R llama-runtime:users /hf
 
 WORKDIR /llama
-RUN git clone --depth=1 https://github.com/aardbeiplantje/rocmfp4-llama.git
+RUN git clone --depth=1 --single-branch -b nemotron-mtp-rocmfp4-strix https://github.com/aardbeiplantje/rocmfp4-llama.git
 ADD https://repo.amd.com/rocm/tarball/therock-dist-linux-gfx1151-7.13.0.tar.gz /tmp/rocm.tar.gz
 RUN mkdir -p /opt/rocm \
      && cd /opt/rocm \
@@ -38,12 +38,12 @@ RUN mkdir -p /opt/rocm \
 ENV ROCM_PATH=/opt/rocm
 ENV LD_LIBRARY_PATH=${ROCM_PATH}/lib
 ENV PATH=${ROCM_PATH}/bin:$PATH
+COPY build_llama.cpp.sh /llama
 RUN \
     cd rocmfp4-llama && \
-    git checkout mtp-rocmfp4-strix && \
-    env JOBS=32 scripts/build-strix-rocmfp4-mtp.sh && \
-    mv build-strix-rocmfp4 / && \
-    rm -rf /llama && mv /build-strix-rocmfp4 /llama && \
+    env JOBS=32 bash /llama/build_llama.cpp.sh && \
+    mv build / && \
+    rm -rf /llama && mv /build /llama && \
     rm -rf rocmfp4-llama
 
 
