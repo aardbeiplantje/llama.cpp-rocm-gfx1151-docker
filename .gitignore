@@ -3,3 +3,5 @@
 
 # Local temp directory
 .tmp/
+# CocoIndex Code (ccc)
+/.cocoindex_code/
