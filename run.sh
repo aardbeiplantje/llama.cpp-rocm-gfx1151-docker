@@ -4,11 +4,23 @@ LLAMA_DOCKER_IMAGE=${LLAMA_DOCKER_IMAGE:-local/ai/llama.cpp-gfx1151:latest}
 HERE="$BASH_SOURCE"
 HERE="${HERE%/*}"
 LLAMA_PRESETS="${LLAMA_PRESETS:-$HERE/llamacpp_presets.ini}"
+
+case "${1:-}" in
+    tail)
+        # Just tail the logs, don't start the container
+        docker logs -f llama
+        exit $?
+        ;;
+esac
+
+# Clean up any existing container
 docker stop llama >/dev/null 2>&1 || true
 while [ "$(docker ps -a -q -f name=^llama$)" ]; do
     docker rm llama >/dev/null 2>&1 || true
     sleep 1
 done
+
+# Build docker run command without the `-f` flag for logs (don't tail by default)
 id=$(docker run \
     --name llama \
     --rm \
@@ -31,7 +43,7 @@ id=$(docker run \
     -v $MODELS_DIR:/models:ro \
     -v $LLAMA_PRESETS:/llama/llamacpp_presets.ini \
     -v llama.cpp-data:/llama.cpp:rw \
-    -v $HF_HOME:/hf:rw \
+    $([ -n "$HF_HOME" ] && echo "-v $HF_HOME:/hf:rw") \
     -e XDG_CACHE_HOME=/dev/shm \
     -e HF_HOME=/hf \
     -e HF_TOKEN \
@@ -39,4 +51,3 @@ id=$(docker run \
     $LLAMA_DOCKER_IMAGE \
     "$@")
 echo $id
-docker logs -f $id
