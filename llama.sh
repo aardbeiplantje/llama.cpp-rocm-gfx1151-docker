@@ -29,6 +29,7 @@ set -- /llama/bin/llama-server \
     --models-max 4 \
     --models-dir /models/ \
     --models-autoload \
+    --metrics \
     --log-timestamps \
     --log-prefix \
     --log-colors on \

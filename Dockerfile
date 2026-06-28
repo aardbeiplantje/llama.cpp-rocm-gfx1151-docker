@@ -37,7 +37,7 @@ RUN git clone --depth=1 --single-branch -b master https://github.com/ggml-org/ll
 ENV ROCM_PATH=/opt/rocm
 ENV LD_LIBRARY_PATH=${ROCM_PATH}/lib
 ENV PATH=${ROCM_PATH}/bin:$PATH
-ARG W=llama.cpp
+ARG W=rocmfp4-llama
 COPY build_llama.cpp.sh /llama-build
 RUN \
     cd $W && \
