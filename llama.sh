@@ -42,6 +42,9 @@ SUBCMD="${1:-server}"
 
 case "$SUBCMD" in
     # ---- server (default) ----
+    bash|sh)
+        exec "$@"
+        ;;
     server)
         shift
         if [ "$1" = "bash" ] || [ "$1" = "/bin/bash" ]; then

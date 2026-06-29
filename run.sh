@@ -14,6 +14,10 @@ case "${1:-}" in
         D=$LOGNAME-${1}
         DOCKER_OPTS="$DOCKER_OPTS -it"
         ;;
+    bash)
+        D=$LOGNAME-${1}
+        DOCKER_OPTS="$DOCKER_OPTS -it"
+        ;;
     server)
         D=llama
         DOCKER_OPTS="$DOCKER_OPTS -d"
@@ -22,6 +26,10 @@ case "${1:-}" in
         # Just tail the logs, don't start the container
         docker logs -f llama
         exit $?
+        ;;
+    *)
+        D=llama
+        DOCKER_OPTS="$DOCKER_OPTS -d"
         ;;
 esac
 
@@ -51,7 +59,7 @@ exec docker run \
     --device /dev/dri \
     --tmpfs /tmp:rw,suid,exec,size=1G \
     --tmpfs /var/tmp:rw,suid,exec,size=1G \
-    $([ -n "$MODELS_DIR"    ] && echo "-v $MODELS_DIR:/models:ro") \
+    $([ -n "$MODELS_DIR"    ] && echo "-v $MODELS_DIR:/models:rw") \
     $([ -n "$LLAMA_PRESETS" ] && echo "-v $LLAMA_PRESETS:/llama/llamacpp_presets.ini") \
     -v llama.cpp-data:/llama.cpp:rw \
     $([ -n "$HF_HOME" ] && echo "-v $HF_HOME:/hf:rw") \
