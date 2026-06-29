@@ -20,7 +20,11 @@ case "${1:-}" in
         ;;
     server)
         D=llama
-        DOCKER_OPTS="$DOCKER_OPTS -d"
+        if [ "$*" != "" ]; then
+            DOCKER_OPTS="$DOCKER_OPTS -it"
+        else
+            DOCKER_OPTS="$DOCKER_OPTS -d"
+        fi
         ;;
     tail)
         # Just tail the logs, don't start the container
