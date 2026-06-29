@@ -1,11 +1,23 @@
 #!/bin/bash
-MODELS_DIR=${MODELS_DIR?"Please set MODELS_DIR to the directory where your llama.cpp models are stored (e.g., /models)"}
 LLAMA_DOCKER_IMAGE=${LLAMA_DOCKER_IMAGE:-local/ai/llama.cpp-gfx1151:latest}
 HERE="$BASH_SOURCE"
 HERE="${HERE%/*}"
-LLAMA_PRESETS="${LLAMA_PRESETS:-$HERE/llamacpp_presets.ini}"
 
+# Switch case?
+DOCKER_OPTS=${DOCKER_OPTS:-""}
 case "${1:-}" in
+    quantize|cli|bench)
+        D=$LOGNAME-${1}
+        DOCKER_OPTS="$DOCKER_OPTS -it"
+        ;;
+    convert)
+        D=$LOGNAME-${1}
+        DOCKER_OPTS="$DOCKER_OPTS -it"
+        ;;
+    server)
+        D=llama
+        DOCKER_OPTS="$DOCKER_OPTS -d"
+        ;;
     tail)
         # Just tail the logs, don't start the container
         docker logs -f llama
@@ -14,17 +26,16 @@ case "${1:-}" in
 esac
 
 # Clean up any existing container
-docker stop llama >/dev/null 2>&1 || true
-while [ "$(docker ps -a -q -f name=^llama$)" ]; do
-    docker rm llama >/dev/null 2>&1 || true
+docker stop $D >/dev/null 2>&1 || true
+while [ "$(docker ps -a -q -f name=^$D$)" ]; do
+    docker rm $D >/dev/null 2>&1 || true
     sleep 1
 done
 
-# Build docker run command without the `-f` flag for logs (don't tail by default)
-id=$(docker run \
-    --name llama \
+# Now run
+exec docker run \
+    --name $D \
     --rm \
-    --detach \
     --network=host \
     --ulimit memlock=-1:-1 \
     --ulimit stack=67108864:67108864 \
@@ -40,14 +51,14 @@ id=$(docker run \
     --device /dev/dri \
     --tmpfs /tmp:rw,suid,exec,size=1G \
     --tmpfs /var/tmp:rw,suid,exec,size=1G \
-    -v $MODELS_DIR:/models:ro \
-    -v $LLAMA_PRESETS:/llama/llamacpp_presets.ini \
+    $([ -n "$MODELS_DIR"    ] && echo "-v $MODELS_DIR:/models:ro") \
+    $([ -n "$LLAMA_PRESETS" ] && echo "-v $LLAMA_PRESETS:/llama/llamacpp_presets.ini") \
     -v llama.cpp-data:/llama.cpp:rw \
     $([ -n "$HF_HOME" ] && echo "-v $HF_HOME:/hf:rw") \
     -e XDG_CACHE_HOME=/dev/shm \
     -e HF_HOME=/hf \
     -e HF_TOKEN \
     -e HF_HUB_CACHE=/hf/hub \
-    $LLAMA_DOCKER_IMAGE \
-    "$@")
-echo $id
+    $DOCKER_OPTS \
+        $LLAMA_DOCKER_IMAGE \
+            "$@"
