@@ -35,6 +35,7 @@ export GGML_CUDA_FORCE_MMQ=${GGML_CUDA_FORCE_MMQ:-1}
 LLAMA_CPP_DIR=${LLAMA_CPP_DIR:-/llama}
 LLAMA_SERVER=${LLAMA_CPP_DIR}/bin/llama-server
 LLAMA_CLI=${LLAMA_CPP_DIR}/bin/llama-cli
+LLAMA_COMPLETION=${LLAMA_CPP_DIR}/bin/llama-completion
 LLAMA_QUANTIZE=${LLAMA_CPP_DIR}/bin/llama-quantize
 LLAMA_BENCH=${LLAMA_CPP_DIR}/bin/llama-bench
 
@@ -97,6 +98,35 @@ case "$SUBCMD" in
             -ctxcp 32 \
             --cache-ram 65536 \
             -sm none \
+            --reasoning on \
+            "$@"
+        ;;
+
+    # ---- completion: interactive chat ----
+    completion)
+        shift
+        exec "$LLAMA_COMPLETION" \
+            -lv 1 \
+            --context-shift \
+            --jinja \
+            -ctk f16 \
+            -ctv f16 \
+            --temp 0 \
+            --top-p 0 \
+            --min-p 0 \
+            --color on \
+            --no-mmap \
+            --no-warmup \
+            --mlock \
+            -ngl 999 \
+            --flash-attn on \
+            -b 2048 \
+            -ub 256 \
+            -t 16 \
+            -tb 16 \
+            -sm none \
+            --simple-io \
+            -no-cnv \
             --reasoning on \
             "$@"
         ;;
