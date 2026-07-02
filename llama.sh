@@ -32,10 +32,11 @@ export GGML_HIP_GRAPHS=${GGML_HIP_GRAPHS:-0}
 export GGML_CUDA_FORCE_MMQ=${GGML_CUDA_FORCE_MMQ:-1}
 
 # --- Resolve binary paths ---
-LLAMA_SERVER=/llama/bin/llama-server
-LLAMA_CLI=/llama/bin/llama-cli
-LLAMA_QUANTIZE=/llama/bin/llama-quantize
-LLAMA_BENCH=/llama/bin/llama-bench
+LLAMA_CPP_DIR=${LLAMA_CPP_DIR:-/llama}
+LLAMA_SERVER=${LLAMA_CPP_DIR}/bin/llama-server
+LLAMA_CLI=${LLAMA_CPP_DIR}/bin/llama-cli
+LLAMA_QUANTIZE=${LLAMA_CPP_DIR}/bin/llama-quantize
+LLAMA_BENCH=${LLAMA_CPP_DIR}/bin/llama-bench
 
 # --- Subcommand dispatch ---
 SUBCMD="${1:-server}"
