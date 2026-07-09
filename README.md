@@ -44,6 +44,8 @@ docker buildx bake --target containers
 - **Flash Attention**: rocWMMA kernels on RDNA3.5
 - **KV Cache Optimization**: GPU offload, f16/q8_0 support
 - **Benchmark Suite**: 4 workloads (prompt processing, generation, mixed, long-context)
+- **Request Tracking**: Built-in request ID generation for session management
+- **Slot Assignment**: Per-request slot targeting via `id_slot` parameter
 
 ## Model Recommendations
 
@@ -175,26 +177,72 @@ HSA_ENABLE_SDMA=0
 flash-attn = true
 ```
 
-## Container Access
+## API Request Tracking
 
-### Host Mounts
+llama-server includes native support for request/session tracking that allows pi.dev and similar platforms to manage concurrent sessions without continuous prompt processing:
 
-```bash
---v $MODELS_DIR:/models:rw      # Models directory
---v $LLAMA_PRESETS:/llama/llamacpp_presets.ini
--v llama.cpp-data:/llama.cpp:rw # Cache/slots
---v $HF_HOME:/hf:rw             # HF cache
+### Request ID Generation
+
+- **Response ID**: Each completion includes a unique `id` field (e.g., `"chatcmpl-xxxxx"`)
+- **Session Tracking**: Store response IDs to correlate requests with session state
+- **Caching**: Responses with identical IDs can be cached and reused
+
+### Slot Assignment (Per-Request)
+
+Use the `id_slot` parameter to assign completion tasks to specific processing slots:
+
+```json
+{
+  "model": "your-model",
+  "messages": [{"role": "user", "content": "Hello"}],
+  "id_slot": 0  // Assign to slot 0 (first available)
+}
 ```
 
-### Device Access
+**Benefits:**
+- `id_slot = -1`: Auto-assign to idle slot (default)
+- `id_slot >= 0`: Force use of specific slot for priority/queue management
+- Enables deterministic task scheduling for session isolation
 
-```bash
---device /dev/kfd
---device /dev/dri
---group-add=video
---group-add=109,986,992        # ROCm groups
---network=host
+### Response Structure Example
+
+```json
+{
+  "choices": [
+    {
+      "message": {
+        "id": "chatcmpl-ecQULm0WqPrftUqjPZO1CFYeDjGZNbDu",
+        "content": "Hello! How can I help you?",
+        "role": "assistant"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "created": 1757141666,
+  "model": "your-model",
+  "id": "chatcmpl-ecQULm0WqPrftUqjPZO1CFYeDjGZNbDu"
+}
 ```
+
+### Session Management for pi.dev
+
+To track sessions without continuous prompting:
+
+1. **Create session**: Send request with `id_slot` assignment
+2. **Store response ID**: Extract and cache the `id` field
+3. **Resume session**: If using streaming, continue from stored ID
+4. **Cancel session**: Use `/v1/chat/completions/{id}` to abort in-progress completions
+5. **Cache prompts**: Enable `cache_prompt: true` for common prefixes
+
+**Recommended settings for session tracking:**
+- `--cache-prompt` (default: enabled)
+- `--slot-save-path` directory for prompt persistence
+- Monitor `/v1/metrics` for `llamacpp:requests_processing` count
+
+See also:
+- Slot management: `POST /slots/{id_slot}` endpoints
+- Request metrics: `GET /v1/metrics`
+- Completion control: `POST /v1/chat/completions/{id}/cancel` (experimental)
 
 ## Git Workflow
 
