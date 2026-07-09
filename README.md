@@ -177,6 +177,25 @@ HSA_ENABLE_SDMA=0
 flash-attn = true
 ```
 
+### llamacpp_presets.ini Settings
+
+Key configuration for session management:
+
+| Parameter | Value | Description |
+|----------|-------|-------------|
+| `parallel` | `1` (or `8` for Strix Halo) | Number of concurrent slots for processing |
+| `cache-prompt` | `true` | Enable prompt caching for session tracking |
+| `no-slots` | `false` | Enable slot-based request management |
+| `cache-idle-slots` | `true` | Reuse idle slots for faster resume |
+
+**For 128GB UMA + Strix Halo:**
+- Set `parallel = 8` to utilize all 8 batch threads
+- Combined with `threads = 16` and `threads-batch = 8`, this provides:
+  - 8 concurrent request slots
+  - Each slot uses up to 16 threads
+  - Batch processing within requests uses 8 threads
+- This matches the 128GB UMA capacity (8 slots × 16 threads × ~2GB/slot ≈ 4KB/slot cache, well within limits)
+
 ## API Request Tracking
 
 llama-server includes native support for request/session tracking that allows pi.dev and similar platforms to manage concurrent sessions without continuous prompt processing:
