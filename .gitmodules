@@ -1,0 +1,4 @@
+[submodule "llama.cpp"]
+	path = llama.cpp
+	url = git@github.com:aardbeiplantje/llama.cpp.git
+	branch = rocmfp4-strix
