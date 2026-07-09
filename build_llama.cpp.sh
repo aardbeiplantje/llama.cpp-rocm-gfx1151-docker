@@ -31,7 +31,8 @@ echo "======================================================================"
 
 # Configure with explicit compiler paths and architecture
 # We add --rocm-path directly to the HIP flags to stop Clang from complaining
-mkdir -p build && cd build || exit 1
+LLAMA_CPP_DIR="${LLAMA_CPP_DIR:-$(pwd)}"
+mkdir -p "$LLAMA_CPP_DIR/build" && cd "$LLAMA_CPP_DIR/build" || exit 1
 cmake \
     .. \
     -DCMAKE_SYSTEM_PROCESSOR=x86_64 \
@@ -103,8 +104,7 @@ cmake \
 # Build with all cores
 echo ""
 echo "Building with $(nproc) parallel jobs..."
-cd ..
-cmake --build build --config Release -j$(nproc) --target \
+cmake --build . --config Release -j$(nproc) --target \
     llama-cli \
     llama-server \
     llama-completion \
