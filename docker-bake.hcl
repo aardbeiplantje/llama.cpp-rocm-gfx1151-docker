@@ -1,5 +1,6 @@
 group "default" {
   targets = ["local"]
+  default = true
 }
 group "release" {
   targets = ["containers"]
