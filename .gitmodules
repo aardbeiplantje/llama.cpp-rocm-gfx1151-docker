@@ -2,7 +2,3 @@
 	path = llama.cpp
 	url = git@github.com:aardbeiplantje/llama.cpp.git
 	branch = rocmfp4-strix
-[submodule "rocmfp4-llama.cpp"]
-	path = rocmfp4-llama.cpp
-	url = git@github.com:aardbeiplantje/rocmfp4-llama.git
-	branch = nemotron-mtp-rocmfp4-strix
