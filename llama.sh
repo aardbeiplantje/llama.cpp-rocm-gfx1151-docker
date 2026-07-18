@@ -77,6 +77,7 @@ case "$SUBCMD" in
             --no-webui \
             --host :: \
             --port 8000 \
+            --timeout 3600 \
             "$@"
         ;;
 
