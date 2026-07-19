@@ -46,6 +46,10 @@ LLAMA_QUANTIZE=${LLAMA_CPP_DIR}/bin/llama-quantize
 LLAMA_BENCH=${LLAMA_CPP_DIR}/bin/llama-bench
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:${LLAMA_CPP_DIR}/bin
 
+# --- /models and /llamacpp_presets.ini overrides ---
+M_DIR=${M_DIR:-/models}
+L_INI=${L_INI:-/llamacpp_presets.ini}
+
 # --- Subcommand dispatch ---
 SUBCMD="${1:-server}"
 
@@ -60,9 +64,9 @@ case "$SUBCMD" in
             exec "$@"
         fi
         exec "$LLAMA_SERVER" \
-            --models-preset /llamacpp_presets.ini \
+            --models-preset "$L_INI" \
             --models-max 4 \
-            --models-dir /models/ \
+            --models-dir "$M_DIR" \
             --models-autoload \
             --metrics \
             --log-timestamps \
