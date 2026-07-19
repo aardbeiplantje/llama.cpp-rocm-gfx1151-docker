@@ -47,7 +47,7 @@ RUN \
 
 FROM base AS runtime
 WORKDIR /llama
-#ADD https://repo.amd.com/rocm/tarball/therock-dist-linux-gfx1151-7.13.0.tar.gz /tmp/rocm.tar.gz
+# ADD https://repo.amd.com/rocm/tarball/therock-dist-linux-gfx1151-7.13.0.tar.gz /tmp/rocm.tar.gz
 ADD https://therock-nightly-tarball.s3.amazonaws.com/therock-dist-linux-gfx1151-7.13.0a20260515.tar.gz /tmp/rocm.tar.gz
 RUN mkdir -p /opt/rocm \
     && tar -xzf /tmp/rocm.tar.gz -C /opt/rocm \
