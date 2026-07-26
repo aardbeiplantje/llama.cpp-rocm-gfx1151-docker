@@ -67,12 +67,35 @@ RUN mkdir -p /opt/rocm \
     && rm -f /rocm.tar.gz
 COPY --from=builder /llama /llama
 
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    nginx \
+    libnginx-mod-http-lua \
+    libnginx-mod-http-perl \
+    libnginx-mod-http-auth-pam \
+    libjson-xs-perl \
+    ca-certificates \
+    strace \
+    lsof \
+    lua-cjson \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+RUN ln -sf /dev/stdout /var/log/nginx/access.log \
+    && ln -sf /dev/stderr /var/log/nginx/error.log
+COPY nginx.conf /nginx.conf
+
 RUN useradd -N -M -d /llama-server/ -u 1000 llama-runtime
 RUN mkdir -p /models      && chown -R llama-runtime:users /models
 RUN mkdir -p /hf          && chown -R llama-runtime:users /hf
+RUN mkdir -p /var/lib/nginx/body  && chown llama-runtime /var/lib/nginx/body
+RUN mkdir -p /var/lib/nginx/proxy && chown llama-runtime /var/lib/nginx/proxy
+RUN mkdir -p /var/lib/nginx/fastcgi && chown llama-runtime /var/lib/nginx/fastcgi
+RUN mkdir -p /var/lib/nginx/uwsgi && chown llama-runtime /var/lib/nginx/uwsgi
+RUN mkdir -p /var/lib/nginx/scgi && chown llama-runtime /var/lib/nginx/scgi
 
 COPY llamacpp_presets.ini /
 COPY llama.sh /
+WORKDIR /app
+COPY lib/ /app/lib/
 
 RUN mkdir -p /llama.cpp/slots && chown -R llama-runtime:users /llama.cpp/
 USER llama-runtime

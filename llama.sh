@@ -59,7 +59,7 @@ case "$SUBCMD" in
         if [ "$1" = "bash" ] || [ "$1" = "/bin/bash" ]; then
             exec "$@"
         fi
-        exec "$LLAMA_SERVER" \
+        "$LLAMA_SERVER" \
             --models-preset "${L_INI:-/llamacpp_presets.ini}" \
             --models-max 4 \
             --models-dir "${M_DIR:-/models}" \
@@ -74,15 +74,14 @@ case "$SUBCMD" in
             --log-colors on \
             -fit off \
             --embeddings \
-            --verbose \
             --mlock \
             --split-mode none \
-            --log-verbosity 2 \
             --no-webui \
-            --host :: \
-            --port 8000 \
+            --host /tmp/llama.sock \
             --timeout 3600 \
-            "$@"
+            "$@" &
+          set -x
+          exec /usr/sbin/nginx -c /nginx.conf -g "daemon off;"
         ;;
 
     # ---- cli: interactive chat ----
