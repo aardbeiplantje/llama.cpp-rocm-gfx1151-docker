@@ -35,6 +35,11 @@ The container runs **nginx** as a reverse proxy in front of `llama-server`:
 - Proxies to `llama-server` via **Unix socket** at `/tmp/llama.sock`
 - Uses **Lua** (`ngx_http_lua_module`) + **Perl** (`ngx_http_perl_module`) for request body transformation
 - POST bodies are captured by a Lua block, passed through a Perl handler (`llama::fixup` in `lib/perl/llama.pm`), then forwarded to the backend
+- The Perl handler (`lib/perl/llama.pm`) transforms incoming chat requests:
+  - Extracts structured blocks from the system message content (mcp_instructions, skills, model environment info, AGENTS.md instructions, project environment info) and splits them into separate user/assistant message pairs to improve KV cache reuse
+  - Fixes Qwen-style system message role assignments
+  - Adds `id_slot` to the request payload
+  - Logs request bodies to `/tmp/request-logs/` with 5-minute rotation and a `latest` symlink
 - Installed modules: `libnginx-mod-http-lua`, `libnginx-mod-http-perl`, `libnginx-mod-http-auth-pam`
 - Docker DNS resolver at `127.0.0.11` for container service discovery
 - Config file: `nginx.conf`
