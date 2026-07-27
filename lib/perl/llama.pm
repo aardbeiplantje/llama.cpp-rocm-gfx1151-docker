@@ -10,13 +10,7 @@ our $_json;
 sub fixup {
     my ($r) = @_;
     my $r_ok = eval {
-        my $method = $r->request_method;
-        my $slot_id = $r->header_in("X-LLamaCPP-Id-slot");
-        print_error("[INFO] REQUEST $method, header X-LLamaCPP-Id-slot: ".( $slot_id//"<no id_slot>"));
-        $r->has_request_body(sub {
-            my ($nr) = @_;
-            return handle_req($nr, $slot_id);
-        });
+        $r->has_request_body(\&handle_req);
         return OK;
     };
     if($@){
@@ -31,6 +25,8 @@ sub fixup {
 
 sub handle_req {
     my ($r, $slot_id) = @_;
+    my $method = $r->request_method;
+    my $slot_id = $r->header_in("X-LLamaCPP-Id-slot");
     my $rb = $r->request_body();
     my $rf = $r->request_body_file();
     if(!defined $rb and defined $rf){
@@ -43,13 +39,19 @@ sub handle_req {
         close $b_fh;
     }
     $rb //= "{}";
+    print_error("[INFO] REQUEST $method, header X-LLamaCPP-Id-slot: ".( $slot_id//"<no id_slot>"));
     if(length($slot_id) and $slot_id =~ m/^\d+$/){
         eval {
             #print_error("[debug] body: $rb, ".($rf//"<no file>"));
             my $req = JSON::XS::decode_json($rb);
             $_json //= JSON::XS->new->utf8->allow_blessed->allow_unknown->allow_nonref->convert_blessed->canonical;
             #print_error("[debug] orig: ",$_json->encode($req));
+            print_error("[INFO] REQUEST $method, header X-LLamaCPP-Id-slot: ".( $slot_id//"<no id_slot>").", model:$req->{model}");
             $req->{id_slot} = 0+$slot_id;
+
+            # fix for qwen
+            $req->{messages}[0]{role} = "system";
+
             $rb = $_json->encode($req);
             #print_error("[debug] new:  ",$rb);
         };
