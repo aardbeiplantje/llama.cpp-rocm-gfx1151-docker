@@ -4,6 +4,7 @@ use strict; use warnings;
 
 use nginx;
 use JSON::XS;
+use POSIX qw(strftime);
 use File::Path qw(make_path);
 
 our $_json;
@@ -48,10 +49,8 @@ sub handle_req {
             $_json //= JSON::XS->new->utf8->allow_blessed->allow_unknown->allow_nonref->convert_blessed->canonical;
             #print_error("[debug] orig: ",$_json->encode($req));
             print_error("[INFO] REQUEST $method, header X-LLamaCPP-Id-slot: ".( $slot_id//"<no id_slot>").", model:$req->{model}");
-            $req->{id_slot} = 0+$slot_id;
 
-            # fix for qwen
-            $req->{messages}[0]{role} = "system";
+            do_magic_fixes($r, $req, $slot_id);
 
             $rb = $_json->encode($req);
             #print_error("[debug] new:  ",$rb);
@@ -60,12 +59,12 @@ sub handle_req {
             eval {
                 my $log_dir = "/tmp/request-logs";
                 make_path($log_dir) unless -d $log_dir;
-                my @t = localtime(time);
-                my $min_block = int($t[1] / 5) * 5;
-                my $log_file = sprintf("%s/requests_%04d%02d%02d_%02d%02d.log",
+                my $t = time;
+                my $min_block = int((localtime($t))[1] / 5) * 5;
+                my $log_file = sprintf("%s/requests_%s_%02d.log",
                     $log_dir,
-                    $t[5] + 1900, $t[4] + 1, $t[3],
-                    int($t[1] / 5) * 5, $min_block);
+                    strftime("%Y%m%d_%H", localtime($t)),
+                    $min_block);
                 open(my $fh, ">>", $log_file) or do {
                     print_error("[WARN] cannot open log file $log_file: $!");
                     return;
@@ -94,6 +93,18 @@ sub handle_req {
     $r->send_http_header("application/json");
     $r->print($rb);
     return OK;
+}
+
+sub do_magic_fixes {
+    my ($r, $llm_req, $slot_id) = @_;
+
+    # add id_slot, make it a number
+    $llm_req->{id_slot} = 0+$slot_id;
+
+    # fix for qwen
+    $llm_req->{messages}[0]{role} = "system";
+
+    return;
 }
 
 sub print_error {
