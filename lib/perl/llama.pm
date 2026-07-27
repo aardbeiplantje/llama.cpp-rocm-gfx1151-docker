@@ -123,29 +123,30 @@ sub do_magic_fixes {
     if($$m =~ s/^(Instructions from: .*?\/AGENTS\.md.*)//gms){
         $agents_instructions = $1;
     }
-    
+
     my $fr = shift @{$llm_req->{messages}//[]};
-    unshift @{$llm_req->{messages}}, $fr, {
-        role => "user", content => $mcp_instructions
-    },{
-        role => "assistant", content => "Understood."
-    },{
-        role => "user", content => $skills
-    },{
-        role => "assistant", content => "Understood."
-    },{
-        role => "user", content => $model_env
-    },{
-        role => "assistant", content => "Understood."
-    },{
-        role => "user", content => $agents_instructions
-    },{
-        role => "assistant", content => "Understood."
-    },{
-        role => "user", content => $project_env
-    },{
-        role => "assistant", content => "Understood."
-    };
+    unshift @{$llm_req->{messages}},
+        $fr,
+        (length($mcp_instructions//"")?(
+            {role => "user", content => $mcp_instructions},
+            {role => "assistant", content => "Understood."}
+        ):()),
+        (length($skills//"")?(
+            {role => "user", content => $skills},
+            {role => "assistant", content => "Understood."},
+        ):()),
+        (length($model_env//"")?(
+            {role => "user", content => $model_env},
+            {role => "assistant", content => "Understood."},
+        ):()),
+        (length($agents_instructions//"")?(
+            {role => "user", content => $agents_instructions},
+            {role => "assistant", content => "Understood."},
+        ):()),
+        (length($project_env//"")?(
+            {role => "user", content => $project_env},
+            {role => "assistant", content => "Understood."},
+        ):());
 
     return;
 }
