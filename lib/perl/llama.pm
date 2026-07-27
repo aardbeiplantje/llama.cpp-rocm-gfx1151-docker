@@ -59,12 +59,7 @@ sub handle_req {
             eval {
                 my $log_dir = "/tmp/request-logs";
                 make_path($log_dir) unless -d $log_dir;
-                my $t = time;
-                my $min_block = int((localtime($t))[1] / 5) * 5;
-                my $log_file = sprintf("%s/requests_%s_%02d.log",
-                    $log_dir,
-                    strftime("%Y%m%d_%H", localtime($t)),
-                    $min_block);
+                my $log_file = strftime("$log_dir/requests_%Y%m%d_%H%M00.log", localtime());
                 open(my $fh, ">>", $log_file) or do {
                     print_error("[WARN] cannot open log file $log_file: $!");
                     return;
