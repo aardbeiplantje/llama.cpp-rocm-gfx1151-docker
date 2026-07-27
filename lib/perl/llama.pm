@@ -25,7 +25,7 @@ sub fixup {
 }
 
 sub handle_req {
-    my ($r, $slot_id) = @_;
+    my ($r) = @_;
     my $method = $r->request_method;
     my $slot_id = $r->header_in("X-LLamaCPP-Id-slot");
     my $rb = $r->request_body();
@@ -56,11 +56,16 @@ sub handle_req {
             $rb = $_json->encode($req);
             #print_error("[debug] new:  ",$rb);
 
-            # log modified request body
+            # log modified request body with 5-min rotation
             eval {
                 my $log_dir = "/tmp/request-logs";
                 make_path($log_dir) unless -d $log_dir;
-                my $log_file = "$log_dir/requests.log";
+                my @t = localtime(time);
+                my $min_block = int($t[1] / 5) * 5;
+                my $log_file = sprintf("%s/requests_%04d%02d%02d_%02d%02d.log",
+                    $log_dir,
+                    $t[5] + 1900, $t[4] + 1, $t[3],
+                    int($t[1] / 5) * 5, $min_block);
                 open(my $fh, ">>", $log_file) or do {
                     print_error("[WARN] cannot open log file $log_file: $!");
                     return;
@@ -71,6 +76,11 @@ sub handle_req {
                 (my $safe_rb = $rb) =~ s/[\r\n]+//g;
                 print $fh "[$timestamp] method=$method slot_id=" . ($slot_id // "none") . " model=$model $safe_rb\n";
                 close $fh;
+
+                # Update latest symlink to point to current 5-min file
+                my $link = "$log_dir/latest";
+                unlink $link if -e $link;
+                symlink($log_file, $link) or print_error("[WARN] cannot create symlink $link: $!");
             };
             if($@){
                 print_error("[WARN] failed to log request body: $@");
