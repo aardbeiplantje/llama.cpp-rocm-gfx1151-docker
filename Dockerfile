@@ -96,6 +96,7 @@ COPY llamacpp_presets.ini /
 COPY llama.sh /
 WORKDIR /app
 COPY lib/ /app/lib/
+RUN nginx -t -c /nginx.conf
 
 RUN mkdir -p /llama.cpp/slots && chown -R llama-runtime:users /llama.cpp/
 USER llama-runtime
