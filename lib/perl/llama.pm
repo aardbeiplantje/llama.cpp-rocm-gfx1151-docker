@@ -4,6 +4,7 @@ use strict; use warnings;
 
 use nginx;
 use JSON::XS;
+use File::Path qw(make_path);
 
 our $_json;
 
@@ -54,6 +55,26 @@ sub handle_req {
 
             $rb = $_json->encode($req);
             #print_error("[debug] new:  ",$rb);
+
+            # log modified request body
+            eval {
+                my $log_dir = "/tmp/request-logs";
+                make_path($log_dir) unless -d $log_dir;
+                my $log_file = "$log_dir/requests.log";
+                open(my $fh, ">>", $log_file) or do {
+                    print_error("[WARN] cannot open log file $log_file: $!");
+                    return;
+                };
+                my $timestamp = localtime();
+                my $model = $req->{model} // "unknown";
+                print_error("[INFO] Logging request body for model=$model to $log_file");
+                (my $safe_rb = $rb) =~ s/[\r\n]+//g;
+                print $fh "[$timestamp] method=$method slot_id=" . ($slot_id // "none") . " model=$model $safe_rb\n";
+                close $fh;
+            };
+            if($@){
+                print_error("[WARN] failed to log request body: $@");
+            }
         };
         if($@){
             chomp(my $err = $@);
