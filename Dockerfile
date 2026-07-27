@@ -96,10 +96,10 @@ COPY llamacpp_presets.ini /
 COPY llama.sh /
 WORKDIR /app
 COPY lib/ /app/lib/
-RUN nginx -t -c /nginx.conf
 
 RUN mkdir -p /llama.cpp/slots && chown -R llama-runtime:users /llama.cpp/
 USER llama-runtime
+RUN nginx -t -c /nginx.conf
 WORKDIR /models
 ENV ROCM_PATH=/opt/rocm
 ENV LD_LIBRARY_PATH=${ROCM_PATH}/lib

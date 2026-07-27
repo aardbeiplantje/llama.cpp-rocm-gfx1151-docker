@@ -99,6 +99,54 @@ sub do_magic_fixes {
     # fix for qwen
     $llm_req->{messages}[0]{role} = "system";
 
+    # parse the first message's content (if role==system) and split it into
+    # multiple in order to improve KV cache reuse. Note that the first message
+    # will always have role==system at the moment, see the qwen hack
+    my $m = \$llm_req->{messages}[0]{content};
+    my $model_env;
+    if($$m =~ s/^(You are powered by the model named .*?\. The exact model ID is .*?\n)//gms){
+        $model_env = $1;
+    }
+    my $project_env;
+    if($$m =~ s/^(Here is some useful information about the environment you are running in:\n<env>.*?<\/env>)//gms){
+        $project_env = $1;
+    }
+    my $mcp_instructions;
+    if($$m =~ s/^(<mcp_instructions>.*?<\/mcp_instructions>)//gms){
+        $mcp_instructions = $1;
+    }
+    my $skills;
+    if($$m =~ s/^(Skills provide specialized instructions and workflows for specific tasks.*?<available_skills>.*?<\/available_skills>)//gms){
+        $skills = $1;
+    }
+    my $agents_instructions;
+    if($$m =~ s/^(Instructions from: .*?\/AGENTS\.md.*)//gms){
+        $agents_instructions = $1;
+    }
+    
+    my $fr = shift @{$llm_req->{messages}//[]};
+    unshift @{$llm_req->{messages}}, $fr, {
+        role => "user", content => $mcp_instructions
+    },{
+        role => "assistant", content => "Understood."
+    },{
+        role => "user", content => $skills
+    },{
+        role => "assistant", content => "Understood."
+    },{
+        role => "user", content => $model_env
+    },{
+        role => "assistant", content => "Understood."
+    },{
+        role => "user", content => $agents_instructions
+    },{
+        role => "assistant", content => "Understood."
+    },{
+        role => "user", content => $project_env
+    },{
+        role => "assistant", content => "Understood."
+    };
+
     return;
 }
 
