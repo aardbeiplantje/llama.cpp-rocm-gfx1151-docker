@@ -8,6 +8,8 @@
 static llama_token* TLlama_tokens = NULL;
 static int32_t TLlama_token_count = 0;
 static STRLEN TLlama_text_len = 0;
+static llama_token* TLlama_loaded_tokens = NULL;
+static size_t TLlama_loaded_count = 0;
 
 MODULE = Llama            PACKAGE = Llama
 
@@ -491,5 +493,334 @@ IV
 llama_get_model(IV ctx)
     CODE:
         RETVAL = (IV)(IV)llama_get_model((const struct llama_context*)ctx);
+    OUTPUT:
+        RETVAL
+
+# ============================================================================
+# KV cache state — get size
+# ============================================================================
+
+UV
+llama_state_get_size(IV ctx)
+    CODE:
+        RETVAL = (UV)llama_state_get_size((struct llama_context*)ctx);
+    OUTPUT:
+        RETVAL
+
+# ============================================================================
+# KV cache state — get data into packed binary string
+# ============================================================================
+
+SV*
+llama_state_get_data(IV ctx)
+    CODE:
+        size_t size = llama_state_get_size((struct llama_context*)ctx);
+        uint8_t* buf = (uint8_t*)malloc(size);
+        size_t copied = llama_state_get_data((struct llama_context*)ctx, buf, size);
+        RETVAL = newSVpv((char*)buf, copied);
+        free(buf);
+    OUTPUT:
+        RETVAL
+
+# ============================================================================
+# KV cache state — set data from packed binary string
+# ============================================================================
+
+UV
+llama_state_set_data(IV ctx, SV* data_sv)
+    CODE:
+        STRLEN len;
+        char* data = SvPV(data_sv, len);
+        RETVAL = (UV)llama_state_set_data((struct llama_context*)ctx, (const uint8_t*)data, len);
+    OUTPUT:
+        RETVAL
+
+# ============================================================================
+# KV cache state — save session file
+# ============================================================================
+
+bool
+llama_state_save_file(IV ctx, SV* path_sv, IV* tokens, IV n_tokens)
+    CODE:
+        STRLEN path_len;
+        char* path = SvPV(path_sv, path_len);
+        RETVAL = llama_state_save_file((struct llama_context*)ctx, path, (const llama_token*)tokens, (size_t)n_tokens);
+    OUTPUT:
+        RETVAL
+
+# ============================================================================
+# KV cache state — load session file
+# ============================================================================
+
+bool
+llama_state_load_file(IV ctx, SV* path_sv, IV capacity)
+    CODE:
+        STRLEN path_len;
+        char* path = SvPV(path_sv, path_len);
+        if (TLlama_loaded_tokens) free(TLlama_loaded_tokens);
+        TLlama_loaded_tokens = (llama_token*)malloc((size_t)capacity * sizeof(llama_token));
+        size_t token_count = 0;
+        RETVAL = llama_state_load_file((struct llama_context*)ctx, path, TLlama_loaded_tokens, (size_t)capacity, &token_count);
+        TLlama_loaded_count = token_count;
+    OUTPUT:
+        RETVAL
+
+IV
+llama_state_load_file_count()
+    CODE:
+        RETVAL = (IV)TLlama_loaded_count;
+    OUTPUT:
+        RETVAL
+
+void
+llama_state_load_file_free()
+    CODE:
+        free(TLlama_loaded_tokens);
+        TLlama_loaded_tokens = NULL;
+        TLlama_loaded_count = 0;
+
+IV
+llama_state_load_file_token(IV idx)
+    CODE:
+        int32_t i = (int32_t)idx;
+        if (!TLlama_loaded_tokens || i < 0 || i >= TLlama_loaded_count) {
+            RETVAL = -1;
+        } else {
+            RETVAL = (IV)TLlama_loaded_tokens[i];
+        }
+    OUTPUT:
+        RETVAL
+
+# ============================================================================
+# Per-sequence state — get size
+# ============================================================================
+
+UV
+llama_state_seq_get_size(IV ctx, IV seq_id)
+    CODE:
+        RETVAL = (UV)llama_state_seq_get_size((struct llama_context*)ctx, (llama_seq_id)seq_id);
+    OUTPUT:
+        RETVAL
+
+# ============================================================================
+# Per-sequence state — get data
+# ============================================================================
+
+SV*
+llama_state_seq_get_data(IV ctx, IV seq_id)
+    CODE:
+        size_t size = llama_state_seq_get_size((struct llama_context*)ctx, (llama_seq_id)seq_id);
+        uint8_t* buf = (uint8_t*)malloc(size);
+        size_t copied = llama_state_seq_get_data((struct llama_context*)ctx, buf, size, (llama_seq_id)seq_id);
+        RETVAL = newSVpv((char*)buf, copied);
+        free(buf);
+    OUTPUT:
+        RETVAL
+
+# ============================================================================
+# Per-sequence state — set data
+# ============================================================================
+
+UV
+llama_state_seq_set_data(IV ctx, SV* data_sv, IV seq_id)
+    CODE:
+        STRLEN len;
+        char* data = SvPV(data_sv, len);
+        RETVAL = (UV)llama_state_seq_set_data((struct llama_context*)ctx, (const uint8_t*)data, len, (llama_seq_id)seq_id);
+    OUTPUT:
+        RETVAL
+
+# ============================================================================
+# Per-sequence state — save session file
+# ============================================================================
+
+UV
+llama_state_seq_save_file(IV ctx, SV* path_sv, IV seq_id, IV* tokens, IV n_tokens)
+    CODE:
+        STRLEN path_len;
+        char* path = SvPV(path_sv, path_len);
+        RETVAL = (UV)llama_state_seq_save_file((struct llama_context*)ctx, path, (llama_seq_id)seq_id, (const llama_token*)tokens, (size_t)n_tokens);
+    OUTPUT:
+        RETVAL
+
+# ============================================================================
+# Per-sequence state — load session file
+# ============================================================================
+
+bool
+llama_state_seq_load_file(IV ctx, SV* path_sv, IV seq_id, IV capacity)
+    CODE:
+        STRLEN path_len;
+        char* path = SvPV(path_sv, path_len);
+        if (TLlama_loaded_tokens) free(TLlama_loaded_tokens);
+        TLlama_loaded_tokens = (llama_token*)malloc((size_t)capacity * sizeof(llama_token));
+        size_t token_count = 0;
+        RETVAL = llama_state_seq_load_file((struct llama_context*)ctx, path, (llama_seq_id)seq_id, TLlama_loaded_tokens, (size_t)capacity, &token_count) > 0;
+        TLlama_loaded_count = token_count;
+    OUTPUT:
+        RETVAL
+
+IV
+llama_state_seq_load_file_count()
+    CODE:
+        RETVAL = (IV)TLlama_loaded_count;
+    OUTPUT:
+        RETVAL
+
+void
+llama_state_seq_load_file_free()
+    CODE:
+        free(TLlama_loaded_tokens);
+        TLlama_loaded_tokens = NULL;
+        TLlama_loaded_count = 0;
+
+IV
+llama_state_seq_load_file_token(IV idx)
+    CODE:
+        int32_t i = (int32_t)idx;
+        if (!TLlama_loaded_tokens || i < 0 || i >= TLlama_loaded_count) {
+            RETVAL = -1;
+        } else {
+            RETVAL = (IV)TLlama_loaded_tokens[i];
+        }
+    OUTPUT:
+        RETVAL
+
+# ============================================================================
+# Extended per-sequence state — get size with flags
+# ============================================================================
+
+UV
+llama_state_seq_get_size_ext(IV ctx, IV seq_id, IV flags)
+    CODE:
+        RETVAL = (UV)llama_state_seq_get_size_ext((struct llama_context*)ctx, (llama_seq_id)seq_id, (llama_state_seq_flags)flags);
+    OUTPUT:
+        RETVAL
+
+# ============================================================================
+# Extended per-sequence state — get data with flags
+# ============================================================================
+
+SV*
+llama_state_seq_get_data_ext(IV ctx, IV seq_id, IV flags)
+    CODE:
+        size_t size = llama_state_seq_get_size_ext((struct llama_context*)ctx, (llama_seq_id)seq_id, (llama_state_seq_flags)flags);
+        uint8_t* buf = (uint8_t*)malloc(size);
+        size_t copied = llama_state_seq_get_data_ext((struct llama_context*)ctx, buf, size, (llama_seq_id)seq_id, (llama_state_seq_flags)flags);
+        RETVAL = newSVpv((char*)buf, copied);
+        free(buf);
+    OUTPUT:
+        RETVAL
+
+# ============================================================================
+# Extended per-sequence state — set data with flags
+# ============================================================================
+
+UV
+llama_state_seq_set_data_ext(IV ctx, SV* data_sv, IV seq_id, IV flags)
+    CODE:
+        STRLEN len;
+        char* data = SvPV(data_sv, len);
+        RETVAL = (UV)llama_state_seq_set_data_ext((struct llama_context*)ctx, (const uint8_t*)data, len, (llama_seq_id)seq_id, (llama_state_seq_flags)flags);
+    OUTPUT:
+        RETVAL
+
+# ============================================================================
+# Memory handle
+# ============================================================================
+
+IV
+llama_get_memory(IV ctx)
+    CODE:
+        RETVAL = (IV)llama_get_memory((const struct llama_context*)ctx);
+    OUTPUT:
+        RETVAL
+
+# ============================================================================
+# Memory — clear
+# ============================================================================
+
+void
+llama_memory_clear(IV mem, bool data)
+    CODE:
+        llama_memory_clear((llama_memory_t)mem, data);
+
+# ============================================================================
+# Memory — seq_rm
+# ============================================================================
+
+bool
+llama_memory_seq_rm(IV mem, IV seq_id, IV p0, IV p1)
+    CODE:
+        RETVAL = llama_memory_seq_rm((llama_memory_t)mem, (llama_seq_id)seq_id, (llama_pos)p0, (llama_pos)p1);
+    OUTPUT:
+        RETVAL
+
+# ============================================================================
+# Memory — seq_cp
+# ============================================================================
+
+void
+llama_memory_seq_cp(IV mem, IV seq_id_src, IV seq_id_dst, IV p0, IV p1)
+    CODE:
+        llama_memory_seq_cp((llama_memory_t)mem, (llama_seq_id)seq_id_src, (llama_seq_id)seq_id_dst, (llama_pos)p0, (llama_pos)p1);
+
+# ============================================================================
+# Memory — seq_keep
+# ============================================================================
+
+void
+llama_memory_seq_keep(IV mem, IV seq_id)
+    CODE:
+        llama_memory_seq_keep((llama_memory_t)mem, (llama_seq_id)seq_id);
+
+# ============================================================================
+# Memory — seq_add
+# ============================================================================
+
+void
+llama_memory_seq_add(IV mem, IV seq_id, IV p0, IV p1, IV delta)
+    CODE:
+        llama_memory_seq_add((llama_memory_t)mem, (llama_seq_id)seq_id, (llama_pos)p0, (llama_pos)p1, (llama_pos)delta);
+
+# ============================================================================
+# Memory — seq_div
+# ============================================================================
+
+void
+llama_memory_seq_div(IV mem, IV seq_id, IV p0, IV p1, IV d)
+    CODE:
+        llama_memory_seq_div((llama_memory_t)mem, (llama_seq_id)seq_id, (llama_pos)p0, (llama_pos)p1, (int)d);
+
+# ============================================================================
+# Memory — seq_pos_min
+# ============================================================================
+
+IV
+llama_memory_seq_pos_min(IV mem, IV seq_id)
+    CODE:
+        RETVAL = (IV)llama_memory_seq_pos_min((llama_memory_t)mem, (llama_seq_id)seq_id);
+    OUTPUT:
+        RETVAL
+
+# ============================================================================
+# Memory — seq_pos_max
+# ============================================================================
+
+IV
+llama_memory_seq_pos_max(IV mem, IV seq_id)
+    CODE:
+        RETVAL = (IV)llama_memory_seq_pos_max((llama_memory_t)mem, (llama_seq_id)seq_id);
+    OUTPUT:
+        RETVAL
+
+# ============================================================================
+# Memory — can_shift
+# ============================================================================
+
+bool
+llama_memory_can_shift(IV mem)
+    CODE:
+        RETVAL = llama_memory_can_shift((llama_memory_t)mem);
     OUTPUT:
         RETVAL

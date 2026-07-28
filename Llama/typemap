@@ -19,6 +19,9 @@ IV*                            T_IV
 llama_token                    T_IV
 llama_seq_id                   T_IV
 llama_pos                      T_I32
+size_t                         T_UV
+struct llama_memory_t*         T_IV
+const struct llama_memory_t*   T_IV
 
 #
 # T_IV — opaque pointer stored as Perl IV (integer, file-descriptor style)
@@ -75,9 +78,30 @@ llama_seq_id
 llama_pos
     $arg = (llama_pos)SvIV($var);
 
+size_t
+    $arg = (size_t)SvUV($var);
+
+struct llama_memory_t*
+    if ($arg == 0) { $arg = (struct llama_memory_t*)NULL; }
+
+const struct llama_memory_t*
+    if ($arg == 0) { $arg = (const struct llama_memory_t*)NULL; }
+
 OUTPUT
 llama_pos
     $var = (IV)$arg
+
+size_t
+    $var = (UV)$arg
+
+struct llama_memory_t*
+    $var = (IV)$arg
+
+const struct llama_memory_t*
+    $var = (IV)$arg
+
+SV
+    $var = (SV)$arg
 
 #
 # SV* -> char* with global length for llama_tokenize
