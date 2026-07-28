@@ -140,8 +140,7 @@ sub set_state {
 
 sub save_session {
     my ($self, $path, $tokens) = @_;
-    my @toks = @$tokens;
-    return Llama::llama_state_save_file($self->{ptr}, $path, \@toks, scalar @toks);
+    return Llama::llama_state_save_file($self->{ptr}, $path, $tokens);
 }
 
 sub load_session {
@@ -179,8 +178,7 @@ sub seq_set_state {
 
 sub seq_save_session {
     my ($self, $path, $seq_id, $tokens) = @_;
-    my @toks = @$tokens;
-    return Llama::llama_state_seq_save_file($self->{ptr}, $path, $seq_id, \@toks, scalar @toks);
+    return Llama::llama_state_seq_save_file($self->{ptr}, $path, $seq_id, $tokens);
 }
 
 sub seq_load_session {

@@ -40,6 +40,16 @@ llama_model_load_from_file(char* path_model)
     OUTPUT:
         RETVAL
 
+IV
+llama_model_load_from_file_mmap(char* path_model)
+    CODE:
+        struct llama_model_params params = llama_model_default_params();
+        params.n_gpu_layers = 999999;
+        params.use_mmap = true;
+        RETVAL = (IV)llama_model_load_from_file(path_model, params);
+    OUTPUT:
+        RETVAL
+
 void
 llama_model_free(IV model)
     CODE:
@@ -540,11 +550,24 @@ llama_state_set_data(IV ctx, SV* data_sv)
 # ============================================================================
 
 bool
-llama_state_save_file(IV ctx, SV* path_sv, IV* tokens, IV n_tokens)
+llama_state_save_file(IV ctx, SV* path_sv, SV* tokens_sv)
     CODE:
         STRLEN path_len;
         char* path = SvPV(path_sv, path_len);
-        RETVAL = llama_state_save_file((struct llama_context*)ctx, path, (const llama_token*)tokens, (size_t)n_tokens);
+        AV* tokens_av = NULL;
+        if (SvROK(tokens_sv) && SvTYPE(SvRV(tokens_sv)) == SVt_PVAV) {
+            tokens_av = (AV*)SvRV(tokens_sv);
+        }
+        size_t n = tokens_av ? (av_len(tokens_av) + 1) : 0;
+        llama_token* tok_buf = (llama_token*)malloc(n * sizeof(llama_token));
+        if (tokens_av) {
+            for (size_t i = 0; i < n; i++) {
+                SV* sv = *av_fetch(tokens_av, (int)i, 0);
+                tok_buf[i] = (llama_token)SvIV(sv);
+            }
+        }
+        RETVAL = llama_state_save_file((struct llama_context*)ctx, path, tok_buf, n);
+        free(tok_buf);
     OUTPUT:
         RETVAL
 
@@ -635,11 +658,24 @@ llama_state_seq_set_data(IV ctx, SV* data_sv, IV seq_id)
 # ============================================================================
 
 UV
-llama_state_seq_save_file(IV ctx, SV* path_sv, IV seq_id, IV* tokens, IV n_tokens)
+llama_state_seq_save_file(IV ctx, SV* path_sv, IV seq_id, SV* tokens_sv)
     CODE:
         STRLEN path_len;
         char* path = SvPV(path_sv, path_len);
-        RETVAL = (UV)llama_state_seq_save_file((struct llama_context*)ctx, path, (llama_seq_id)seq_id, (const llama_token*)tokens, (size_t)n_tokens);
+        AV* tokens_av = NULL;
+        if (SvROK(tokens_sv) && SvTYPE(SvRV(tokens_sv)) == SVt_PVAV) {
+            tokens_av = (AV*)SvRV(tokens_sv);
+        }
+        size_t n = tokens_av ? (av_len(tokens_av) + 1) : 0;
+        llama_token* tok_buf = (llama_token*)malloc(n * sizeof(llama_token));
+        if (tokens_av) {
+            for (size_t i = 0; i < n; i++) {
+                SV* sv = *av_fetch(tokens_av, (int)i, 0);
+                tok_buf[i] = (llama_token)SvIV(sv);
+            }
+        }
+        RETVAL = (UV)llama_state_seq_save_file((struct llama_context*)ctx, path, (llama_seq_id)seq_id, tok_buf, n);
+        free(tok_buf);
     OUTPUT:
         RETVAL
 

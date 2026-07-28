@@ -39,6 +39,12 @@ sub model_load {
     return Llama::Model->new($ptr);
 }
 
+sub model_load_mmap {
+    my $path = shift;
+    my $ptr = Llama::llama_model_load_from_file_mmap($path);
+    return Llama::Model->new($ptr);
+}
+
 sub new {
     my ($class, $path, %opts) = @_;
     setup_rocm_env() unless $ENV{_LLAMA_ENV_SETUP};
