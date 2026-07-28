@@ -203,12 +203,28 @@ const struct llama_memory_t*
 
 ## Design Decisions
 
-1. **In-memory API first** — `get_data`/`set_data` are more flexible (can serialize to Redis, shared memory, etc.). File I/O wraps the in-memory API.
-2. **Allocate/free in XS** — for `get_data`, XS allocates buffer, calls C function, creates Perl SV, frees buffer. Caller gets a clean Perl string.
-3. **`size_t` as `UV`** — simple and correct on 64-bit Linux. No need for big-integer handling since state sizes won't exceed UV range.
-4. **`llama_memory_t` as `IV`** — opaque pointer, same treatment as `llama_context*`.
-5. **Per-sequence deferred?** — Include in this implementation since the API is straightforward. The current codebase uses `n_seq_max=1` but the API works regardless.
-6. **Error handling** — `llama_state_set_data` returns bytes read. Check against expected size and `croak` on mismatch. `llama_state_load_file` returns bool — croak on failure.
+1. **XS is a thin API wrapper** — expose only what llama.cpp provides. No mmap, no caching logic in XS.
+2. **In-memory API first** — `get_data`/`set_data` are the core. File I/O is a thin convenience layer.
+3. **Allocate/free in XS** — for `get_data`, XS allocates buffer, calls C function, creates Perl SV, frees buffer. Caller gets a clean Perl string.
+4. **`size_t` as `UV`** — simple and correct on 64-bit Linux.
+5. **`llama_memory_t` as `IV`** — opaque pointer, same treatment as `llama_context*`.
+6. **Per-sequence included** — straightforward API, works regardless of `n_seq_max` config.
+7. **Error handling** — `llama_state_set_data` returns bytes read. `llama_state_load_file` returns bool — croak on failure.
+8. **mmap / /dev/shm / caching tiers belong in Perl** — the app layer uses `Sys::Mmap` to mmap a file, then passes the SV to `llama_state_set_data`. The XS does not need any mmap-specific functions.
+
+## mmap from Perl (no XS changes needed)
+
+```perl
+use Sys::Mmap;
+my $path = "/dev/shm/cache_0.bin";
+open my $fh, '<', $path or die;
+my $size = -s $path;
+my $data;
+mmap $data, $size, PROT_READ, MAP_SHARED, $fh;
+my $bytes = $ctx->set_state($data);  # llama_state_set_data reads directly from mmap
+```
+
+The Perl layer handles the I/O strategy (mmap, fread, /dev/shm vs disk). The XS just provides the llama.cpp API surface.
 
 ## Testing Strategy
 
