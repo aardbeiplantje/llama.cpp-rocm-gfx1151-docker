@@ -61,7 +61,8 @@ sub chat_template {
 
 sub vocab {
     my ($self) = @_;
-    return Llama::Vocab->new($self->{ptr});
+    my $vocab_ptr = Llama::llama_model_get_vocab($self->{ptr});
+    return Llama::Vocab->new($vocab_ptr);
 }
 
 sub DESTROY {

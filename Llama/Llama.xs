@@ -5,6 +5,10 @@
 #include <perl.h>
 #include <XSUB.h>
 
+static llama_token* TLlama_tokens = NULL;
+static int32_t TLlama_token_count = 0;
+static STRLEN TLlama_text_len = 0;
+
 MODULE = Llama            PACKAGE = Llama
 
 # ============================================================================
@@ -161,6 +165,37 @@ llama_batch_free(IV batch)
         free((void*)batch);
 
 # ============================================================================
+# Batch field setters
+# ============================================================================
+
+void
+llama_batch_set_n_tokens(IV batch, IV n_tokens)
+    CODE:
+        struct llama_batch* b = (struct llama_batch*)batch;
+        b->n_tokens = (int32_t)n_tokens;
+
+void
+llama_batch_set_token(IV batch, IV idx, IV token, IV pos, SV* seq_id_sv)
+    CODE:
+        struct llama_batch* b = (struct llama_batch*)batch;
+        IV n_seq = 0;
+        AV* seq_id_av = NULL;
+        if (SvROK(seq_id_sv) && SvTYPE(SvRV(seq_id_sv)) == SVt_PVAV) {
+            seq_id_av = (AV*)SvRV(seq_id_sv);
+            n_seq = av_len(seq_id_av) + 1;
+        }
+        b->token[idx] = (llama_token)token;
+        b->pos[idx] = (llama_pos)pos;
+        b->n_seq_id[idx] = (int32_t)n_seq;
+        b->logits[idx] = (int8_t)1;
+        if (seq_id_av) {
+            for (int32_t i = 0; i < n_seq; i++) {
+                SV* sv = *av_fetch(seq_id_av, i, 0);
+                b->seq_id[idx][i] = (llama_seq_id)SvIV(sv);
+            }
+        }
+
+# ============================================================================
 # Inference
 # ============================================================================
 
@@ -213,23 +248,47 @@ llama_get_embeddings(IV ctx)
         RETVAL
 
 # ============================================================================
-# Tokenization — returns number of tokens
+# Tokenization — persistent buffer for tokenized results
 # ============================================================================
 
 IV
-llama_tokenize_count(IV vocab, char* text, IV max_tokens, bool add_special, bool parse_special)
+llama_tokenize(IV vocab, SV* text, IV max_tokens, bool add_special, bool parse_special)
     CODE:
-        auto tokens = (llama_token*)malloc((size_t)max_tokens * sizeof(llama_token));
-        int32_t n = llama_tokenize((const struct llama_vocab*)vocab, text, -1, tokens, (int32_t)max_tokens, add_special, parse_special);
+        if (TLlama_tokens) free(TLlama_tokens);
+        TLlama_text_len = 0;
+        char* text_str = SvPV(text, TLlama_text_len);
+        TLlama_tokens = (llama_token*)malloc((size_t)max_tokens * sizeof(llama_token));
+        int32_t n = llama_tokenize((const struct llama_vocab*)vocab, text_str, (int32_t)TLlama_text_len, TLlama_tokens, (int32_t)max_tokens, add_special, parse_special);
         if (n < 0) {
-            free(tokens);
+            free(TLlama_tokens);
+            TLlama_tokens = NULL;
+            TLlama_token_count = 0;
             RETVAL = -1;
         } else {
+            TLlama_token_count = n;
             RETVAL = (IV)n;
         }
-        free(tokens);
     OUTPUT:
         RETVAL
+
+IV
+llama_tokenize_get_token(IV idx)
+    CODE:
+        int32_t i = (int32_t)idx;
+        if (!TLlama_tokens || i < 0 || i >= TLlama_token_count) {
+            RETVAL = -1;
+        } else {
+            RETVAL = (IV)TLlama_tokens[i];
+        }
+    OUTPUT:
+        RETVAL
+
+void
+llama_tokenize_free()
+    CODE:
+        free(TLlama_tokens);
+        TLlama_tokens = NULL;
+        TLlama_token_count = 0;
 
 # ============================================================================
 # Token to text piece

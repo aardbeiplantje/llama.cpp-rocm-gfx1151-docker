@@ -55,6 +55,17 @@ float*
 IV*
     if ($arg == 0) { $arg = (IV*)NULL; }
 
+IV*
+    {
+        AV* av = (AV*)SvRV($arg);
+        IV* arr = (IV*)malloc((SvAOK(av) ? av_len(av) + 1 : 0) * sizeof(IV));
+        for (int i = 0; i < SvAOK(av) ? av_len(av) + 1 : 0; i++) {
+            SV* sv = *av_fetch(av, i, 0);
+            arr[i] = SvIV(sv);
+        }
+        $arg = (IV*)arr;
+    }
+
 llama_token
     $arg = (llama_token)SvIV($var);
 
@@ -65,8 +76,24 @@ llama_pos
     $arg = (llama_pos)SvIV($var);
 
 OUTPUT
-struct llama_model*
+llama_pos
     $var = (IV)$arg
+
+#
+# SV* -> char* with global length for llama_tokenize
+#
+
+INPUT
+SV*
+    {
+        STRLEN len;
+        $var = SvPV($arg, len);
+        TLlama_text_len = len;
+    }
+
+OUTPUT
+SV*
+    $var = newSVpv($arg, 0);
 
 const struct llama_model*
     $var = (IV)$arg

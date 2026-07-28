@@ -54,7 +54,7 @@ sub token_to_piece {
 sub tokenize {
     my ($self, $text, $max_tokens) = @_;
     $max_tokens //= length($text) * 2 + 10;
-    my $n = Llama::llama_tokenize_count($self->{ptr}, $text, $max_tokens, 1, 0);
+    my $n = Llama::llama_tokenize($self->{ptr}, $text, $max_tokens, 1, 0);
     if ($n < 0) {
         croak("tokenization error: text too long for buffer");
     }
@@ -68,8 +68,7 @@ sub tokenize {
 sub detokenize {
     my ($self, @tokens) = @_;
     my $buf = "\0" x 512;
-    my @tok_ptrs = map { \$_ } @tokens;
-    my $n = Llama::llama_detokenize($self->{ptr}, \@tok_ptrs, scalar @tokens,
+    my $n = Llama::llama_detokenize($self->{ptr}, \@tokens, scalar @tokens,
                               $buf, 512, 1, 0);
     if ($n < 0) {
         $n = -$n;
