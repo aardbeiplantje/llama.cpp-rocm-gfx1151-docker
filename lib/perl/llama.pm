@@ -96,8 +96,9 @@ sub do_magic_fixes {
     # add id_slot, make it a number
     $llm_req->{id_slot} = 0+$slot_id;
 
-    # fix for qwen
+    # fix for qwen: first message ALWAYS a system, the rest NEVER a system
     $llm_req->{messages}[0]{role} = "system";
+    $_->{role} = "user" for grep {$_->{role} eq "system"} ((@{$llm_req->{messages}})[1..$#{$llm_req->{messages}}]);
 
     # parse the first message's content (if role==system) and split it into
     # multiple in order to improve KV cache reuse. Note that the first message
