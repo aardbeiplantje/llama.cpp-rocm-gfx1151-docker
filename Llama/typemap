@@ -1,0 +1,129 @@
+# typemap — custom mappings for llama.cpp C types
+
+TYPEMAP
+
+struct llama_model*            T_IV
+const struct llama_model*      T_IV
+struct llama_context*          T_IV
+const struct llama_context*    T_IV
+struct llama_vocab*            T_IV
+const struct llama_vocab*      T_IV
+struct llama_sampler*          T_IV
+const struct llama_sampler*    T_IV
+struct llama_batch             T_STRUCT
+struct llama_model_params      T_STRUCT
+struct llama_context_params    T_STRUCT
+llama_token_data_array         T_STRUCT
+float*                         T_IV
+IV*                            T_IV
+llama_token                    T_IV
+llama_seq_id                   T_IV
+llama_pos                      T_I32
+
+#
+# T_IV — opaque pointer stored as Perl IV (integer, file-descriptor style)
+#
+
+INPUT
+struct llama_model*
+    if ($arg == 0) { $arg = (struct llama_model*)NULL; }
+
+const struct llama_model*
+    if ($arg == 0) { $arg = (const struct llama_model*)NULL; }
+
+struct llama_context*
+    if ($arg == 0) { $arg = (struct llama_context*)NULL; }
+
+const struct llama_context*
+    if ($arg == 0) { $arg = (const struct llama_context*)NULL; }
+
+struct llama_vocab*
+    if ($arg == 0) { $arg = (struct llama_vocab*)NULL; }
+
+const struct llama_vocab*
+    if ($arg == 0) { $arg = (const struct llama_vocab*)NULL; }
+
+struct llama_sampler*
+    if ($arg == 0) { $arg = (struct llama_sampler*)NULL; }
+
+const struct llama_sampler*
+    if ($arg == 0) { $arg = (const struct llama_sampler*)NULL; }
+
+float*
+    if ($arg == 0) { $arg = (float*)NULL; }
+
+IV*
+    if ($arg == 0) { $arg = (IV*)NULL; }
+
+llama_token
+    $arg = (llama_token)SvIV($var);
+
+llama_seq_id
+    $arg = (llama_seq_id)SvIV($var);
+
+llama_pos
+    $arg = (llama_pos)SvIV($var);
+
+OUTPUT
+struct llama_model*
+    $var = (IV)$arg
+
+const struct llama_model*
+    $var = (IV)$arg
+
+struct llama_context*
+    $var = (IV)$arg
+
+const struct llama_context*
+    $var = (IV)$arg
+
+struct llama_vocab*
+    $var = (IV)$arg
+
+const struct llama_vocab*
+    $var = (IV)$arg
+
+struct llama_sampler*
+    $var = (IV)$arg
+
+const struct llama_sampler*
+    $var = (IV)$arg
+
+float*
+    $var = (IV)$arg
+
+IV*
+    $var = (IV)$arg
+
+llama_token
+    $var = (IV)$arg
+
+llama_seq_id
+    $var = (IV)$arg
+
+llama_pos
+    $var = (IV)$arg
+
+#
+# T_STRUCT — pass struct by value (copy into C, copy out)
+#
+
+INPUT
+struct llama_batch
+    $arg = *(struct llama_batch*)$var
+
+struct llama_model_params
+    $arg = *(struct llama_model_params*)$var
+
+struct llama_context_params
+    $arg = *(struct llama_context_params*)$var
+
+OUTPUT
+struct llama_batch
+    $var = (IV)&$var
+
+struct llama_model_params
+    $var = (IV)&$var
+
+struct llama_context_params
+    $var = (IV)&$var

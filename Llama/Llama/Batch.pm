@@ -1,0 +1,53 @@
+package Llama::Batch;
+
+use strict;
+use warnings;
+
+our $VERSION = '0.1.0';
+
+sub new {
+    my ($class, %opts) = @_;
+    my $max_tokens = $opts{max_tokens} || 2048;
+    my $embd       = $opts{embd}       || 0;
+    my $n_seq_max  = $opts{n_seq_max}  || 1;
+    my $ptr = Llama::llama_batch_init($max_tokens, $embd, $n_seq_max);
+    return bless {
+        ptr        => $ptr,
+        max_tokens => $max_tokens,
+        freed      => 0,
+    }, $class;
+}
+
+sub ptr {
+    my ($self) = @_;
+    return $self->{ptr};
+}
+
+sub max_tokens {
+    my ($self) = @_;
+    return $self->{max_tokens};
+}
+
+sub set_token {
+    my ($self, $idx, $token, $pos, $seq_id) = @_;
+    $seq_id = [$seq_id // 0] unless ref $seq_id;
+    Llama::llama_batch_set_token($self->{ptr}, $token, $pos, $seq_id, scalar @$seq_id);
+}
+
+sub set_tokens {
+    my ($self, @token_pos_seq) = @_;
+    for my $i (0 .. $#token_pos_seq) {
+        my ($token, $pos, @seq) = @{$token_pos_seq[$i]};
+        $self->set_token($i, $token, $pos, \@seq);
+    }
+}
+
+sub DESTROY {
+    my ($self) = @_;
+    if ($self && !$self->{freed}) {
+        Llama::llama_batch_free($self->{ptr});
+        $self->{freed} = 1;
+    }
+}
+
+1;

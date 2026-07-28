@@ -7,3 +7,7 @@
 /.cocoindex_code/
 *.gguf
 llama.cpp/build
+
+**/*.o
+**/*.bs
+**/Makefile.old
