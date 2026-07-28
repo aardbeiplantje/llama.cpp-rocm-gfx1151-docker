@@ -22,6 +22,7 @@ RUN apt update && apt install -y --no-install-recommends \
     libvulkan-dev \
     spirv-headers \
     curl \
+    perl \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -55,6 +56,21 @@ RUN \
     mv build /llama && \
     rm -rf $W
 
+FROM base AS perl-builder
+WORKDIR /llama-perl
+COPY --from=builder /llama.cpp /llama.cpp
+COPY Llama /llama-perl/Llama
+ENV ROCM_PATH=/opt/rocm
+ENV LD_LIBRARY_PATH=${ROCM_PATH}/lib
+RUN \
+    cd /llama-perl/Llama && \
+    ROCM_PATH=/opt/rocm \
+    LLAMA_SRC=/llama.cpp \
+    LLAMA_BUILD=/llama.cpp/build \
+    perl Makefile.PL && \
+    make test && \
+    make install
+
 FROM base AS runtime
 WORKDIR /llama
 COPY --from=base /rocm.tar.gz /
@@ -66,6 +82,7 @@ RUN mkdir -p /opt/rocm \
         "*/lib/hipblaslt/*" \
     && rm -f /rocm.tar.gz
 COPY --from=builder /llama /llama
+COPY --from=perl-builder /usr/local/lib/perl5 /usr/local/lib/perl5
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     nginx \
