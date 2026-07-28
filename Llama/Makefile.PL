@@ -14,7 +14,7 @@ WriteMakefile(
     NAME         => 'Llama',
     VERSION_FROM => 'Llama.pm',
     dist         => { COMPRESS => 'gzip -9f', SUFFIX => 'gz', },
-    OBJECT       => '\$(O_FILES)',
+    OBJECT       => '$(O_FILES)',
     CC           => $cc,
     LD           => $cc,
     OPTIMIZE     => '-O2 -std=c++17',

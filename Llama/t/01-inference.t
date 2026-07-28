@@ -20,7 +20,7 @@ eval { Llama::backend_init(); Llama::backend_free(); };
 ok(!$@, 'backend init/free works');
 
 # Test 3: Model can be loaded
-my $model_path = '/workdir/llama.cpp.git/llama.cpp/build/bin/Qwen3.5-4B-ROCMFP4.gguf';
+my $model_path = $ENV{GGUF_MODEL} // '/workdir/llama.cpp.git/llama.cpp/build/bin/Qwen3.5-4B-ROCMFP4.gguf';
 my $model;
 eval {
     Llama::backend_init();
