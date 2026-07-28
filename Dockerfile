@@ -43,22 +43,25 @@ COPY --from=base /rocm.tar.gz /
 RUN mkdir -p /opt/rocm \
     && tar -xzf /rocm.tar.gz -C /opt/rocm \
     && rm -f /rocm.tar.gz
-RUN git clone --depth=1 --single-branch -b nemotron-mtp-rocmfp4-strix https://github.com/aardbeiplantje/rocmfp4-llama.git
-RUN git clone --depth=1 --single-branch -b master https://github.com/ggml-org/llama.cpp.git
+RUN git clone --depth=1 --single-branch -b nemotron-mtp-rocmfp4-strix https://github.com/aardbeiplantje/rocmfp4-llama.git rocmfp4-llama.cpp.git
+RUN git clone --depth=1 --single-branch -b master https://github.com/ggml-org/llama.cpp.git llama.cpp.git
 ENV ROCM_PATH=/opt/rocm
 ENV LD_LIBRARY_PATH=${ROCM_PATH}/lib
 ENV PATH=${ROCM_PATH}/bin:$PATH
-ARG W=rocmfp4-llama
+ARG W=rocmfp4-llama.cpp.git
 COPY build_llama.cpp.sh /llama-build
 RUN \
-    cd $W && \
+    mv $W llama.cpp && \
+    cd llama.cpp && \
     env JOBS=32 bash /llama-build/build_llama.cpp.sh && \
     mv build /llama && \
     rm -rf $W
 
 FROM base AS perl-builder
 WORKDIR /llama-perl
-COPY --from=builder /llama.cpp /llama.cpp
+ARG W=rocmfp4-llama
+COPY --from=builder /llama-build/llama.cpp /llama.cpp
+COPY --from=builder /llama /llama
 COPY Llama /llama-perl/Llama
 ENV ROCM_PATH=/opt/rocm
 ENV LD_LIBRARY_PATH=${ROCM_PATH}/lib
@@ -66,10 +69,10 @@ RUN \
     cd /llama-perl/Llama && \
     ROCM_PATH=/opt/rocm \
     LLAMA_SRC=/llama.cpp \
-    LLAMA_BUILD=/llama.cpp/build \
+    LLAMA_BUILD=/llama \
     perl Makefile.PL && \
     make test && \
-    make install
+    make install DESTDIR=/app/lib/perl
 
 FROM base AS runtime
 WORKDIR /llama
@@ -82,7 +85,10 @@ RUN mkdir -p /opt/rocm \
         "*/lib/hipblaslt/*" \
     && rm -f /rocm.tar.gz
 COPY --from=builder /llama /llama
-COPY --from=perl-builder /usr/local/lib/perl5 /usr/local/lib/perl5
+COPY --from=perl-builder /app/lib/perl/usr/local/lib /usr/local/lib 
+ENV ROCM_PATH=/opt/rocm
+ENV LD_LIBRARY_PATH=${ROCM_PATH}/lib:/llama/bin
+RUN perl -MLlama -we 'print "OK\n"'
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     nginx \
