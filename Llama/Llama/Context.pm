@@ -91,12 +91,11 @@ sub get_embeddings {
 
 sub default_sampler {
     my ($self) = @_;
-    if (!@{$self->{samplers}}) {
-        push @{$self->{samplers}}, Llama::top_k_sampler(64);
-        push @{$self->{samplers}}, Llama::top_p_sampler(0.8);
-        push @{$self->{samplers}}, Llama::temp_sampler(0.8);
-    }
-    my $chain = Llama::sampler_chain(@{$self->{samplers}});
+    my $chain = Llama::sampler_chain(
+        Llama::top_k_sampler(64),
+        Llama::top_p_sampler(0.8),
+        Llama::temp_sampler(0.8),
+    );
     return $chain;
 }
 
