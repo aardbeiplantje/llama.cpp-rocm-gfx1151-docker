@@ -107,6 +107,8 @@ sub do_magic_fixes {
     my $model_env;
     if($$m =~ s/^(You are powered by the model named .*?\. The exact model ID is .*?\n)//gms){
         $model_env = $1;
+        # strip Today's date: from env
+        $model_env =~ s/Today's date: .*?\n//ms;
     }
     my $project_env;
     if($$m =~ s/^(Here is some useful information about the environment you are running in:\n<env>.*?<\/env>)//gms){
