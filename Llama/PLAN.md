@@ -651,4 +651,4 @@ sub cache_embeddings {
 2. **lib/perl/llama.pm** — add cache handlers (keep existing fixup logic)
 3. **Remaining llama-server endpoints** — health, models, tokenize, detokenize, props, streaming endpoints
 4. **Integration tests** — end-to-end with nginx
-5. **Proper sampler** — replace greedy sampling with top_k/top_p/temp sampler chain (current blocker was sampler chain cleanup crash; greedy sampling works)
+5. **Proper sampler** — deferred: llama.cpp bug in `llama_sampler_sample` with top_k/top_p/temp samplers on Qwen3.5 ROCmFP4 model (`GGML_ASSERT(cur_p.selected >= 0 && cur_p.selected < (int32_t) cur_p.size)` fails in llama-sampler.cpp:866). Greedy sampling works and is used as stopgap.
