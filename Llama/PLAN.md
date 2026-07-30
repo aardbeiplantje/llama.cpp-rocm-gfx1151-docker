@@ -2,7 +2,7 @@
 
 ## Status: ✅ COMPLETE — Core Engine
 
-All core features implemented. 116 tests passing across 6 test files.
+All core features implemented. 180 tests passing across 7 test files.
 Llama::Cache inference engine with slot management, chat completion, completion, embeddings, and KV cache persistence is fully functional.
 
 ## Goal
@@ -98,7 +98,16 @@ const struct llama_memory_t*   T_IV
 
 **Fix:** XS functions manually build a correctly-sized `llama_token*` buffer from Perl arrays, avoiding the typemap entirely for token data.
 
-### 4. Perl Module Changes
+### 5. Key Bug Fix: KV Cache Save/Restore Return Values
+
+**Bug found and fixed:** `_save_slot_cache` and `_restore_slot_cache` used `return unless` instead of `return 0 unless`, causing falsy returns when the guard condition passed. Additionally, `save_slot_to_mmap_file` and `load_slot_from_mmap_file` had `return` inside `eval` blocks which did not propagate the value correctly. The header used only `N` (n_tokens) but `seq_state_size()` returned a different value than `seq_get_state()` actual data length.
+
+**Fix:** 
+- Changed all `_save_slot_cache`/`_restore_slot_cache` guards to `return 0 unless`
+- Moved `return` statements outside `eval` blocks in `save_slot_to_mmap_file` and `load_slot_from_mmap_file`, storing result in a variable instead
+- Changed header format from `pack('N', n_tokens)` to `pack('NN', n_tokens, actual_size)` to store actual data length and read it back on restore
+
+### 7. Perl Module Changes
 
 #### Llama::Context — state methods
 
@@ -147,7 +156,7 @@ Llama::_read_float($ptr, $i)       # reads float at index from logits buffer
 Llama::_get_embeddings_ptr($ctx_ptr)  # returns pointer to embeddings buffer
 ```
 
-### 5. Llama::Cache — KV cache + inference engine
+### 8. Llama::Cache — KV cache + inference engine
 
 ```perl
 my $cache = Llama::Cache->new(
@@ -200,7 +209,7 @@ $cache->get_stats()
 $cache->reset_stats()
 ```
 
-### 6. Llama::Cache::Stream — streaming helper class
+### 9. Llama::Cache::Stream — streaming helper class
 
 ```perl
 my $stream = Llama::Cache::Stream->new($conv_id);
@@ -222,7 +231,9 @@ my $cancelled = $stream->is_cancelled();
 8. ✅ **Showcase test** — `t/04-mmap-showcase.t` demonstrating mmap model loading + cross-context state transfer
 9. ✅ **Llama::Cache** — full inference engine with slot management, chat completion, completion, embeddings, KV cache persistence
 10. ✅ **Llama::Cache::Stream** — streaming helper class for SSE support
-11. ✅ **Tests** — `t/05-cache.t` covering all Llama::Cache methods
+11. ✅ **Tests** — `t/05-cache.t` covering all Llama::Cache methods (53 tests)
+12. ✅ **Tests** — `t/06-stream.t` covering Llama::Cache::Stream (20 tests)
+13. ✅ **Bug fix: KV cache save/restore** — fixed return values, NN header with actual_size, eval scope fixes
 
 ## Test Coverage
 
@@ -235,12 +246,13 @@ my $cancelled = $stream->is_cancelled();
 | `t/02-inference.t` | 11 | Tokenization, decode, logits, sampling |
 | `t/03-kv-cache.t` | 30 | State save/restore, session file I/O, per-sequence ops, KV cache manipulation |
 | `t/04-mmap-showcase.t` | 19 | Mmap model loading, cross-context state transfer, session roundtrip |
-| `t/05-cache.t` | 41 | Llama::Cache: creation, model info, slot management, chat completion, completion, embeddings, KV cache save/load, stats |
+| `t/05-cache.t` | 53 | Llama::Cache: creation, model info, slot management, chat/completion/embeddings, KV cache save/load, auto-save/restore, mmap I/O, stats |
+| `t/06-stream.t` | 20 | Llama::Cache::Stream: SSE chunking, chunking, finalization, cancellation |
 
 ### Test Results
 
 ```
-Files=6, Tests=116, 42 wallclock secs
+Files=7, Tests=180, 59 wallclock secs
 Result: PASS
 ```
 
@@ -258,6 +270,10 @@ Result: PASS
 10. ✅ **Cache completion** — tokenize, decode, greedy sample, return OpenAI-compatible response
 11. ✅ **Cache embeddings** — tokenize, decode, return embeddings array
 12. ✅ **Cache KV persistence** — save slot cache to file, load back, list cached files
+13. ✅ **Auto-save on free_slot** — calling free_slot triggers _save_slot_cache, writes to disk
+14. ✅ **Auto-restore on alloc_slot** — calling alloc_slot triggers _restore_slot_cache, loads from disk
+15. ✅ **Mmap file I/O** — save_slot_to_mmap_file and load_slot_from_mmap_file with NN header (n_tokens + actual_size)
+16. ✅ **SSE streaming** — Llama::Cache::Stream class for chunked SSE responses
 
 ## Design Decisions
 
@@ -278,6 +294,8 @@ Result: PASS
 15. **SSE streaming in Perl** — nginx Perl module handles SSE response formatting.
 16. **Embeddings via existing API** — `llama_get_embeddings()` already bound, just wrap in Perl.
 17. **Skip rerank/LoRA** — not needed for current use case.
+18. **KV cache header stores actual_size** — `pack('NN', n_tokens, actual_size)` because `seq_state_size()` may differ from `seq_get_state()` return length.
+19. **Return values stored outside eval** — Perl `return` inside `eval` does not propagate; use a variable instead.
 
 ## mmap from Perl (no XS changes needed)
 
