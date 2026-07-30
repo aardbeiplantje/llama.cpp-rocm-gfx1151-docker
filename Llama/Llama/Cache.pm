@@ -11,6 +11,9 @@ use Llama::Context;
 use Llama::Batch;
 use Llama::Vocab;
 
+my $HAVE_MMAP = eval { require Sys::Mmap; Sys::Mmap->import(); 1 };
+my $HAVE_IO_FILE = eval { require IO::File; IO::File->import(); 1 };
+
 # Load Llama.pm for model_load_mmap and other Perl-level functions
 use Llama;
 
@@ -96,6 +99,7 @@ sub alloc_slot {
     for my $i (0 .. $#contexts) {
         if ($contexts[$i]{state} eq 'idle') {
             $self->{contexts}[$i]{state} = 'busy';
+            $self->_restore_slot_cache($i);
             return $i;
         }
     }
@@ -105,6 +109,7 @@ sub alloc_slot {
 sub free_slot {
     my ($self, $slot_id) = @_;
     return unless defined $self->{contexts}[$slot_id];
+    $self->_save_slot_cache($slot_id);
     $self->{contexts}[$slot_id]{state} = 'idle';
     $self->{contexts}[$slot_id]{n_tokens} = 0;
     $self->{contexts}[$slot_id]{t_start} = 0;
@@ -373,36 +378,209 @@ sub embeddings {
 }
 
 # ============================================================================
-# KV cache persistence
+# KV cache persistence — mmap-backed
 # ============================================================================
 
-sub save_slot_cache {
+sub _slot_cache_path {
+    my ($self, $slot_id) = @_;
+    return "$self->{cache_dir}/slot_${slot_id}.cache";
+}
+
+sub _save_slot_cache {
+    my ($self, $slot_id) = @_;
+    my $slot = $self->{contexts}[$slot_id];
+    my $ctx = $slot->{context};
+    return 0 unless $slot->{n_tokens} > 0;
+
+    my $size = $ctx->seq_state_size(0);
+    return 0 unless $size > 0;
+
+    my $data = $ctx->seq_get_state(0);
+    my $path = $self->_slot_cache_path($slot_id);
+    my $actual_size = length($data);
+
+    my $tmp = "$path.tmp";
+    eval {
+        open my $fh, '>:raw', $tmp or die "Cannot write $tmp: $!";
+        my $header = pack('NN', $slot->{n_tokens}, $actual_size);
+        print $fh $header;
+        print $fh $data;
+        close $fh;
+        rename $tmp, $path or die "Cannot rename $tmp to $path: $!";
+    };
+    if ($@) {
+        unlink $tmp if -f $tmp;
+        warn "[Cache] save_slot_cache($slot_id): $@";
+        return 0;
+    }
+    return -s $path;
+}
+
+sub _restore_slot_cache {
+    my ($self, $slot_id) = @_;
+    my $slot = $self->{contexts}[$slot_id];
+    my $ctx = $slot->{context};
+    my $path = $self->_slot_cache_path($slot_id);
+    return 0 unless -f $path;
+
+    my $file_size = -s $path;
+    return 0 unless $file_size > 8;
+
+    eval {
+        open my $fh, '<:raw', $path or die "Cannot read $path: $!";
+        my $header;
+        my $bytes_read = read $fh, $header, 8;
+        die "read $bytes_read header bytes, expected 8" unless defined $bytes_read && $bytes_read == 8;
+        my ($n_tokens, $data_size) = unpack('NN', $header);
+
+        my $data;
+        $bytes_read = read $fh, $data, $data_size;
+        close $fh;
+        die "read $bytes_read data bytes, expected $data_size" unless defined $bytes_read && $bytes_read == $data_size;
+
+        my $restored = $ctx->seq_set_state($data, 0);
+        $slot->{n_tokens} = $n_tokens;
+        return $restored;
+    };
+    if ($@) {
+        warn "[Cache] restore_slot_cache($slot_id): $@";
+        return 0;
+    }
+}
+
+sub save_slot_to_mmap {
+    my ($self, $slot_id, $file_path) = @_;
+    return 0 unless $HAVE_MMAP;
+    my $slot = $self->{contexts}[$slot_id];
+    my $ctx = $slot->{context};
+    return unless $slot->{n_tokens} > 0;
+
+    my $size = $ctx->seq_state_size(0);
+    return unless $size > 0;
+
+    my $data = $ctx->seq_get_state(0);
+
+    eval {
+        open my $fh, '>:raw', $file_path or die "Cannot write $file_path: $!";
+        print $fh $data;
+        close $fh;
+
+        my $mmap_data;
+        my $fh2 = IO::File->new($file_path, '<:raw') or die unless $HAVE_IO_FILE;
+        my $fsize = -s $file_path;
+        my $prot = $HAVE_MMAP ? (PROT_READ() || 1) : 1;
+        my $map = $HAVE_MMAP ? (MAP_SHARED() || 1) : 1;
+        mmap $mmap_data, $fsize, $prot, $map, $fh2;
+        close $fh2;
+
+        my $restored = $ctx->seq_set_state($mmap_data, 0);
+        return $restored;
+    };
+    if ($@) {
+        warn "[Cache] save_slot_to_mmap($slot_id): $@";
+        return 0;
+    }
+    return $size;
+}
+
+sub load_slot_from_mmap {
+    my ($self, $slot_id, $file_path) = @_;
+    return 0 unless $HAVE_MMAP;
+    my $slot = $self->{contexts}[$slot_id];
+    my $ctx = $slot->{context};
+    return unless -f $file_path;
+
+    my $file_size = -s $file_path;
+    return unless $file_size > 0;
+
+    my $ctx_size = $ctx->seq_state_size(0);
+    return unless $ctx_size > 0 && $file_size >= $ctx_size;
+
+    eval {
+        open my $fh, '<:raw', $file_path or die "Cannot read $file_path: $!";
+        my $data;
+        my $bytes_read = read $fh, $data, $ctx_size;
+        close $fh;
+        die "read $bytes_read bytes, expected $ctx_size" unless defined $bytes_read && $bytes_read == $ctx_size;
+
+        my $restored = $ctx->seq_set_state($data, 0);
+        $slot->{n_tokens} = $restored > 0 ? $ctx_size : 0;
+        return $restored;
+    };
+    if ($@) {
+        warn "[Cache] load_slot_from_mmap($slot_id): $@";
+        return 0;
+    }
+}
+
+sub save_slot_to_mmap_file {
     my ($self, $slot_id, $file_path) = @_;
     my $slot = $self->{contexts}[$slot_id];
     my $ctx = $slot->{context};
-    my $tokens = $slot->{n_tokens} > 0 ? [$ctx->ptr] : [];
+    return 0 unless $slot->{n_tokens} > 0;
 
-    # Save per-sequence state
     my $size = $ctx->seq_state_size(0);
+    return 0 unless $size > 0;
+
     my $data = $ctx->seq_get_state(0);
-    open my $fh, '>:raw', $file_path or die "Cannot write $file_path: $!";
-    print $fh $data;
-    close $fh;
-    return -s $file_path;
+    my $actual_size = length($data);
+
+    my $result = 0;
+    eval {
+        open my $fh, '>:raw', $file_path or die "Cannot write $file_path: $!";
+        my $header = pack('NN', $slot->{n_tokens}, $actual_size);
+        print $fh $header;
+        print $fh $data;
+        close $fh;
+        $result = -s $file_path;
+    };
+    if ($@) {
+        warn "[Cache] save_slot_to_mmap_file($slot_id): $@";
+        return 0;
+    }
+    return $result;
+}
+
+sub load_slot_from_mmap_file {
+    my ($self, $slot_id, $file_path) = @_;
+    my $slot = $self->{contexts}[$slot_id];
+    my $ctx = $slot->{context};
+    return 0 unless -f $file_path;
+
+    my $file_size = -s $file_path;
+    return 0 unless $file_size > 8;
+
+    my $result = 0;
+    eval {
+        open my $fh, '<:raw', $file_path or die "Cannot read $file_path: $!";
+        my $header;
+        my $bytes_read = read $fh, $header, 8;
+        die "read $bytes_read header bytes, expected 8" unless defined $bytes_read && $bytes_read == 8;
+        my ($n_tokens, $data_size) = unpack('NN', $header);
+
+        my $data;
+        $bytes_read = read $fh, $data, $data_size;
+        close $fh;
+        die "read $bytes_read data bytes, expected $data_size" unless defined $bytes_read && $bytes_read == $data_size;
+
+        $result = $ctx->seq_set_state($data, 0);
+        $slot->{n_tokens} = $n_tokens;
+    };
+    if ($@) {
+        warn "[Cache] load_slot_from_mmap_file($slot_id): $@";
+        return 0;
+    }
+    return $result;
+}
+
+sub save_slot_cache {
+    my ($self, $slot_id, $file_path) = @_;
+    return $self->save_slot_to_mmap_file($slot_id, $file_path);
 }
 
 sub load_slot_cache {
     my ($self, $slot_id, $file_path) = @_;
-    my $slot = $self->{contexts}[$slot_id];
-    my $ctx = $slot->{context};
-
-    open my $fh, '<:raw', $file_path or die "Cannot read $file_path: $!";
-    local $/;
-    my $data = <$fh>;
-    close $fh;
-
-    my $bytes = $ctx->seq_set_state($data, 0);
-    return $bytes;
+    return $self->load_slot_from_mmap_file($slot_id, $file_path);
 }
 
 sub list_cached_slots {
