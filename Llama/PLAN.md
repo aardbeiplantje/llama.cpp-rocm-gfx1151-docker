@@ -1,9 +1,9 @@
 # Implementation Plan
 
-## Status: ✅ COMPLETE — Core Engine
+## Status: ✅ COMPLETE — Core Engine + Multi-Model
 
 All core features implemented. 180 tests passing across 7 test files.
-Llama::Cache inference engine with slot management, chat completion, completion, embeddings, and KV cache persistence is fully functional.
+Llama::Cache inference engine with multi-model support, slot management, chat completion, completion, embeddings, KV cache persistence, and preset file loading is fully functional.
 
 ## Goal
 
@@ -234,6 +234,9 @@ my $cancelled = $stream->is_cancelled();
 11. ✅ **Tests** — `t/05-cache.t` covering all Llama::Cache methods (53 tests)
 12. ✅ **Tests** — `t/06-stream.t` covering Llama::Cache::Stream (20 tests)
 13. ✅ **Bug fix: KV cache save/restore** — fixed return values, NN header with actual_size, eval scope fixes
+14. ✅ **Llama::ModelConfig** — preset file parsing (INI format), per-model config with key aliasing (INI → Perl), global defaults + per-model overrides
+15. ✅ **Multi-model Llama::Cache** — accept list of ModelConfig objects, each model has independent contexts/slots, global slot namespace, model routing by name
+16. ✅ **nginx multi-model routing** — MODELS env var for multiple models, preset_file env var, model selection from request body
 
 ## Test Coverage
 
@@ -296,6 +299,9 @@ Result: PASS
 17. **Skip rerank/LoRA** — not needed for current use case.
 18. **KV cache header stores actual_size** — `pack('NN', n_tokens, actual_size)` because `seq_state_size()` may differ from `seq_get_state()` return length.
 19. **Return values stored outside eval** — Perl `return` inside `eval` does not propagate; use a variable instead.
+20. **Multi-model architecture** — each model has its own set of contexts/slots; global slot namespace with offsets; model routing by name from request body
+21. **ModelConfig preset parsing** — INI file parsed in Perl (no libllama dependency); global `[*]` defaults merged with per-model overrides; key aliasing maps INI keys (ctx-size) to Perl keys (n_ctx)
+22. **Model loaded once per Cache instance** — `load_model()` called once and stored in model hash; vocab pointer stays valid across requests
 
 ## mmap from Perl (no XS changes needed)
 
@@ -665,8 +671,9 @@ sub cache_embeddings {
 
 ## Remaining Work
 
-1. **nginx integration** — add `/api/cache` location blocks to nginx.conf
-2. **lib/perl/llama.pm** — add cache handlers (keep existing fixup logic)
-3. **Remaining llama-server endpoints** — health, models, tokenize, detokenize, props, streaming endpoints
+1. ~~**nginx integration**~~ — ✅ added `/api/cache` location blocks to nginx.conf
+2. ~~**lib/perl/llama.pm**~~ — ✅ added cache handlers with multi-model routing
+3. **Remaining llama-server endpoints** — health, tokenize, detokenize, props, streaming endpoints
 4. **Integration tests** — end-to-end with nginx
 5. **Proper sampler** — deferred: llama.cpp bug in `llama_sampler_sample` with top_k/top_p/temp samplers on Qwen3.5 ROCmFP4 model (`GGML_ASSERT(cur_p.selected >= 0 && cur_p.selected < (int32_t) cur_p.size)` fails in llama-sampler.cpp:866). Greedy sampling works and is used as stopgap.
+6. **Multi-model preset testing** — test preset file loading with real model presets
