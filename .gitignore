@@ -11,3 +11,6 @@ llama.cpp/build
 **/*.o
 **/*.bs
 **/Makefile.old
+
+# Test cache directories
+Llama/cache_*/
