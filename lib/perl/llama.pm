@@ -318,6 +318,75 @@ sub cache_models {
     return _json_response($r, [$model_info]);
 }
 
+sub cache_tokenize {
+    my ($r) = @_;
+    return HTTP_INTERNAL_SERVER_ERROR unless _check_cache($r);
+    $r->send_http_header("application/json");
+    my $rb = _read_body($r);
+    my $req = JSON::XS::decode_json($rb);
+    return _json_response($r, { error => "invalid JSON" }, 400) unless $req;
+
+    my $text = $req->{input} // "";
+    my $vocab = $CACHE->{model}->vocab;
+    my @tokens = $vocab->tokenize($text);
+
+    return _json_response($r, { tokens => \@tokens, count => scalar @tokens });
+}
+
+sub cache_detokenize {
+    my ($r) = @_;
+    return HTTP_INTERNAL_SERVER_ERROR unless _check_cache($r);
+    $r->send_http_header("application/json");
+    my $rb = _read_body($r);
+    my $req = JSON::XS::decode_json($rb);
+    return _json_response($r, { error => "invalid JSON" }, 400) unless $req;
+
+    my $tokens = $req->{tokens};
+    return _json_response($r, { error => "tokens required" }, 400) unless $tokens;
+
+    my $vocab = $CACHE->{model}->vocab;
+    my @pieces;
+    for my $tok (@$tokens) {
+        push @pieces, $vocab->token_to_piece($tok);
+    }
+    my $text = join('', @pieces);
+
+    return _json_response($r, { text => $text });
+}
+
+sub cache_metrics {
+    my ($r) = @_;
+    return HTTP_INTERNAL_SERVER_ERROR unless _check_cache($r);
+    $r->send_http_header("application/json");
+
+    my $slots = $CACHE->get_slots();
+    my $stats = $CACHE->get_stats();
+    my $perf;
+    my $slot0 = $CACHE->get_slot(0);
+    if ($slot0 && $slot0->{context}) {
+        $perf = $slot0->{context}->perf_tkvll();
+    }
+
+    my @slot_metrics;
+    for my $id (sort keys %$slots) {
+        my $s = $slots->{$id};
+        push @slot_metrics, {
+            id => $id,
+            state => $s->{state},
+            n_tokens => $s->{n_tokens},
+        };
+    }
+
+    return _json_response($r, {
+        slots => \@slot_metrics,
+        stats => $stats,
+        kv_cache_usage => $perf ? {
+            used => $perf->{kv_used_cells} // 0,
+            max => $perf->{kv_max_cells} // 0,
+        } : undef,
+    });
+}
+
 # ============================================================================
 # Internal helpers
 # ============================================================================

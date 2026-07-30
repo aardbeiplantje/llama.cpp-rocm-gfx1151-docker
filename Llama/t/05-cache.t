@@ -27,7 +27,7 @@ eval {
         n_ctx      => 2048,
         n_batch    => 256,
         n_threads  => 4,
-        n_slots    => 2,
+        n_slots    => 4,
         cache_dir  => tempdir('cache_XXXXXX', CLEANUP => 0),
     );
 };
@@ -58,6 +58,12 @@ ok(defined $slot_0, "alloc_slot returned $slot_0");
 my $slot_1 = $cache->alloc_slot();
 ok(defined $slot_1, "alloc_slot returned $slot_1");
 
+my $slot_2 = $cache->alloc_slot();
+ok(defined $slot_2, "alloc_slot returned $slot_2");
+
+my $slot_3 = $cache->alloc_slot();
+ok(defined $slot_3, "alloc_slot returned $slot_3");
+
 my $slot_busy = $cache->alloc_slot();
 ok(!defined $slot_busy, "alloc_slot returns undef when all slots busy");
 
@@ -65,6 +71,8 @@ my $slots = $cache->get_slots();
 ok(ref $slots eq 'HASH', "get_slots returns hashref");
 ok(defined $slots->{0}, "slot 0 exists in slots");
 ok(defined $slots->{1}, "slot 1 exists in slots");
+ok(defined $slots->{2}, "slot 2 exists in slots");
+ok(defined $slots->{3}, "slot 3 exists in slots");
 
 # Test 5: Chat completion (blocking)
 my $slot_id = 0;
@@ -133,8 +141,50 @@ $cache->reset_stats();
 my $stats_after = $cache->get_stats();
 ok($stats_after->{tokens_total} == 0, "stats reset to 0");
 
+# Test 14: Auto-save on free_slot
+my $slot_a = $cache->alloc_slot();
+my $messages = [{ role => "user", content => "Hello world test" }];
+$cache->chat_completion($slot_a, $messages, 8);
+my $n_tokens_before = $cache->get_slot($slot_a)->{n_tokens};
+ok($n_tokens_before > 0, "slot $slot_a has $n_tokens_before tokens before free");
+
+my $cache_file = $cache->_slot_cache_path($slot_a);
+$cache->free_slot($slot_a);
+ok(-f $cache_file, "auto-save created cache file at $cache_file");
+ok(-s $cache_file > 0, "auto-save cache file has content");
+
+# Test 15: Auto-restore on alloc_slot (slot_a is now free)
+my $slot_b = $cache->alloc_slot();
+my $n_tokens_after = $cache->get_slot($slot_b)->{n_tokens};
+ok($n_tokens_after > 0 && $n_tokens_after < 1000, "auto-restore loaded $n_tokens_after tokens into slot $slot_b");
+
+# Test 16: save_slot_to_mmap_file and load_slot_from_mmap_file
+my $slot_c = $cache->alloc_slot();
+my $messages2 = [{ role => "user", content => "Test mmap save" }];
+$cache->chat_completion($slot_c, $messages2, 8);
+my $mmap_cache_file = "$cache->{cache_dir}/mmap_test.cache";
+my $saved = $cache->save_slot_to_mmap_file($slot_c, $mmap_cache_file);
+ok($saved > 0, "save_slot_to_mmap_file saved $saved bytes");
+ok(-f $mmap_cache_file, "mmap cache file exists");
+
+my $slot_d = $cache->alloc_slot();
+my $loaded = $cache->load_slot_from_mmap_file($slot_d, $mmap_cache_file);
+ok($loaded > 0, "load_slot_from_mmap_file loaded $loaded bytes");
+my $n_tokens_loaded = $cache->get_slot($slot_d)->{n_tokens};
+ok($n_tokens_loaded > 0 && $n_tokens_loaded < 1000, "loaded slot has $n_tokens_loaded tokens");
+
+# Cleanup
+$cache->free_slot(0);
+$cache->free_slot(1);
+$cache->free_slot(2);
+$cache->free_slot(3);
+$cache->free_slot($slot_a) if defined $slot_a;
+$cache->free_slot($slot_b) if defined $slot_b;
+$cache->free_slot($slot_c) if defined $slot_c;
+$cache->free_slot($slot_d) if defined $slot_d;
 $cache->DESTROY;
 unlink $cache_file if -f $cache_file;
+unlink $mmap_cache_file if -f $mmap_cache_file;
 rmdir $cache->{cache_dir} if -d $cache->{cache_dir};
 
 done_testing();
