@@ -10,11 +10,11 @@ use Llama::Model;
 use Llama::Context;
 use Llama::Batch;
 use Llama::Vocab;
+use Llama::ModelConfig;
 
 my $HAVE_MMAP = eval { require Sys::Mmap; Sys::Mmap->import(); 1 };
 my $HAVE_IO_FILE = eval { require IO::File; IO::File->import(); 1 };
 
-# Load Llama.pm for model_load_mmap and other Perl-level functions
 use Llama;
 
 require XSLoader;
@@ -26,14 +26,7 @@ XSLoader::load('Llama', $VERSION);
 
 sub new {
     my ($class, %opts) = @_;
-    my $model_path = $opts{model_path} or die "model_path required";
-    my $n_ctx      = $opts{n_ctx}      || 4096;
-    my $n_batch    = $opts{n_batch}    || 512;
-    my $n_threads  = $opts{n_threads}  || 16;
-    my $n_slots    = $opts{n_slots}    || 4;
-    my $cache_dir  = $opts{cache_dir}  || "/dev/shm/llama_cache";
 
-    # Setup ROCm environment
     unless ($ENV{_LLAMA_ENV_SETUP}) {
         $ENV{HSA_OVERRIDE_GFX_VERSION}     = '11.5.1';
         $ENV{GGML_CUDA_ENABLE_UNIFIED_MEMORY} = '1';
@@ -47,39 +40,122 @@ sub new {
 
     Llama::llama_backend_init();
 
-    # Load model with mmap
-    my $model = Llama::model_load_mmap($model_path);
-
-    # Create pre-allocated slot contexts
-    my @contexts;
-    for my $i (0 .. $n_slots - 1) {
-        my $ctx = Llama::Context->new(
-            $model,
-            n_ctx        => $n_ctx,
-            n_batch      => $n_batch,
-            n_threads    => $n_threads,
-            embeddings   => $opts{embeddings} || 0,
-        );
-        push @contexts, {
-            context => $ctx,
-            state   => 'idle',
-            n_tokens => 0,
-            t_start => 0,
-            t_prompt => 0,
-            t_gen => 0,
-        };
-    }
-
-    # Create cache directory
+    my $cache_dir = $opts{cache_dir} || "/dev/shm/llama_cache";
     unless (-d $cache_dir) {
         eval { require File::Path; File::Path::make_path($cache_dir) };
     }
 
+    my @models;
+    my $total_slots = 0;
+    my $slot_offset = 0;
+
+    if (my $models_list = $opts{models}) {
+        for my $model_spec (@$models_list) {
+            my $model;
+            if (ref $model_spec && $model_spec->isa('Llama::ModelConfig')) {
+                $model = $model_spec;
+            } elsif (ref $model_spec && $model_spec->isa('Llama::Model')) {
+                $model = bless({ %$model_spec, _is_model => 1 }, 'Llama::ModelConfig');
+                $model->{path} = $model_spec->desc;
+            } else {
+                my $preset_name = $model_spec->{name} || $model_spec->{path};
+                $preset_name =~ s/\.gguf$//i;
+                $model = Llama::ModelConfig->new(
+                    path        => $model_spec->{path},
+                    preset_file => $opts{preset_file},
+                    preset_name => $preset_name,
+                    overrides   => $model_spec->{overrides} || {},
+                );
+            }
+
+            my $n_slots = $model_spec->{n_slots} || $opts{n_slots} || 4;
+            my $model_name = $model->model_name || $model->path;
+
+            my @contexts;
+            for my $i (0 .. $n_slots - 1) {
+                my $ctx = Llama::Context->new(
+                    $model->load_model,
+                    n_ctx        => $model->n_ctx,
+                    n_batch      => $model->n_batch,
+                    n_threads    => $model->n_threads,
+                    n_threads_batch => $model->n_threads_batch,
+                    embeddings   => $model->embeddings,
+                );
+                push @contexts, {
+                    context => $ctx,
+                    state   => 'idle',
+                    n_tokens => 0,
+                    t_start => 0,
+                    t_prompt => 0,
+                    t_gen => 0,
+                };
+            }
+
+            push @models, {
+                config     => $model,
+                contexts   => \@contexts,
+                n_slots    => $n_slots,
+                slot_offset => $slot_offset,
+                model_name => $model_name,
+            };
+
+            $total_slots += $n_slots;
+            $slot_offset += $n_slots;
+        }
+    } elsif (my $model_path = $opts{model_path}) {
+        my $n_ctx = $opts{n_ctx} || 4096;
+        my $n_batch = $opts{n_batch} || 512;
+        my $n_threads = $opts{n_threads} || 16;
+        my $n_slots = $opts{n_slots} || 4;
+        my $embeddings = $opts{embeddings} || 0;
+
+        my $model = Llama::ModelConfig->new(
+            path        => $model_path,
+            preset_file => $opts{preset_file},
+            preset_name => ($opts{model_name} || $model_path) =~ s/\.gguf$//r,
+            overrides   => {
+                n_ctx        => $n_ctx,
+                n_batch      => $n_batch,
+                n_threads    => $n_threads,
+            },
+        );
+
+        my @contexts;
+        for my $i (0 .. $n_slots - 1) {
+            my $ctx = Llama::Context->new(
+                $model->load_model,
+                n_ctx        => $n_ctx,
+                n_batch      => $n_batch,
+                n_threads    => $n_threads,
+                embeddings   => $embeddings,
+            );
+            push @contexts, {
+                context => $ctx,
+                state   => 'idle',
+                n_tokens => 0,
+                t_start => 0,
+                t_prompt => 0,
+                t_gen => 0,
+            };
+        }
+
+        push @models, {
+            config      => $model,
+            contexts    => \@contexts,
+            n_slots     => $n_slots,
+            slot_offset => 0,
+            model_name  => $model->model_name || $model_path,
+        };
+
+        $total_slots = $n_slots;
+    } else {
+        die "Either 'models' (list) or 'model_path' required";
+    }
+
     return bless {
-        model       => $model,
-        contexts    => \@contexts,
+        models      => \@models,
         cache_dir   => $cache_dir,
-        n_slots     => $n_slots,
+        total_slots => $total_slots,
         next_slot   => 0,
         stats       => {
             tokens_total            => 0,
@@ -89,18 +165,58 @@ sub new {
     }, $class;
 }
 
+sub get_model_by_name {
+    my ($self, $name) = @_;
+    for my $m (@{$self->{models}}) {
+        return $m if $m->{model_name} eq $name;
+    }
+    return $self->{models}[0];
+}
+
+sub get_model_by_slot {
+    my ($self, $slot_id) = @_;
+    for my $m (@{$self->{models}}) {
+        if ($slot_id >= $m->{slot_offset} && $slot_id < $m->{slot_offset} + $m->{n_slots}) {
+            return $m;
+        }
+    }
+    return undef;
+}
+
+sub get_slot {
+    my ($self, $slot_id) = @_;
+    for my $m (@{$self->{models}}) {
+        if ($slot_id >= $m->{slot_offset} && $slot_id < $m->{slot_offset} + $m->{n_slots}) {
+            my $local = $slot_id - $m->{slot_offset};
+            return $m->{contexts}[$local];
+        }
+    }
+    return undef;
+}
+
+sub get_model {
+    my ($self) = @_;
+    return $self->{models}[0];
+}
+
+sub get_models {
+    my ($self) = @_;
+    return $self->{models};
+}
+
 # ============================================================================
 # Slot management
 # ============================================================================
 
 sub alloc_slot {
     my ($self) = @_;
-    my @contexts = @{$self->{contexts}};
-    for my $i (0 .. $#contexts) {
-        if ($contexts[$i]{state} eq 'idle') {
-            $self->{contexts}[$i]{state} = 'busy';
-            $self->_restore_slot_cache($i);
-            return $i;
+    for my $m (@{$self->{models}}) {
+        for my $i (0 .. $m->{n_slots} - 1) {
+            if ($m->{contexts}[$i]{state} eq 'idle') {
+                $m->{contexts}[$i]{state} = 'busy';
+                $self->_restore_slot_cache($m, $i);
+                return $m->{slot_offset} + $i;
+            }
         }
     }
     return undef;
@@ -108,29 +224,100 @@ sub alloc_slot {
 
 sub free_slot {
     my ($self, $slot_id) = @_;
-    return unless defined $self->{contexts}[$slot_id];
-    $self->_save_slot_cache($slot_id);
-    $self->{contexts}[$slot_id]{state} = 'idle';
-    $self->{contexts}[$slot_id]{n_tokens} = 0;
-    $self->{contexts}[$slot_id]{t_start} = 0;
+    my $m = $self->get_model_by_slot($slot_id);
+    return unless $m;
+    my $local = $slot_id - $m->{slot_offset};
+    $self->_save_slot_cache($m, $local);
+    $m->{contexts}[$local]{state} = 'idle';
+    $m->{contexts}[$local]{n_tokens} = 0;
+    $m->{contexts}[$local]{t_start} = 0;
 }
 
 sub get_slots {
     my ($self) = @_;
     my %slots;
-    for my $i (0 .. $self->{n_slots} - 1) {
-        my $ctx = $self->{contexts}[$i];
-        $slots{$i} = {
-            state    => $ctx->{state},
-            n_tokens => $ctx->{n_tokens},
-        };
+    for my $m (@{$self->{models}}) {
+        for my $i (0 .. $m->{n_slots} - 1) {
+            my $global = $m->{slot_offset} + $i;
+            my $ctx = $m->{contexts}[$i];
+            $slots{$global} = {
+                state    => $ctx->{state},
+                n_tokens => $ctx->{n_tokens},
+                model    => $m->{model_name},
+            };
+        }
     }
     return \%slots;
 }
 
-sub get_slot {
-    my ($self, $slot_id) = @_;
-    return $self->{contexts}[$slot_id];
+sub get_stats {
+    my ($self) = @_;
+    return {%{$self->{stats}}};
+}
+
+sub reset_stats {
+    my ($self) = @_;
+    $self->{stats} = {
+        tokens_total            => 0,
+        prompt_tokens_total     => 0,
+        completion_tokens_total => 0,
+    };
+}
+
+sub model_desc {
+    my ($self) = @_;
+    return $self->{models}[0]->{config}->model_name;
+}
+
+sub model_n_ctx_train {
+    my ($self) = @_;
+    my $m = $self->{models}[0];
+    my $loaded = $m->{loaded_model} || do {
+        $m->{loaded_model} = $m->{config}->load_model;
+        $m->{loaded_model};
+    };
+    return $loaded->n_ctx_train;
+}
+
+sub model_n_embd {
+    my ($self) = @_;
+    my $m = $self->{models}[0];
+    my $loaded = $m->{loaded_model} || do {
+        $m->{loaded_model} = $m->{config}->load_model;
+        $m->{loaded_model};
+    };
+    return $loaded->n_embd;
+}
+
+sub model_n_params {
+    my ($self) = @_;
+    my $m = $self->{models}[0];
+    my $loaded = $m->{loaded_model} || do {
+        $m->{loaded_model} = $m->{config}->load_model;
+        $m->{loaded_model};
+    };
+    return $loaded->n_params;
+}
+
+sub model_info {
+    my ($self) = @_;
+    my @info;
+    for my $m (@{$self->{models}}) {
+        my $loaded = $m->{loaded_model} || do {
+            $m->{loaded_model} = $m->{config}->load_model;
+            $m->{loaded_model};
+        };
+        push @info, {
+            id       => $m->{model_name},
+            object   => "model",
+            owned_by => "llama.cpp",
+            n_ctx_train => $loaded->n_ctx_train,
+            n_embd    => $loaded->n_embd,
+            n_params  => $loaded->n_params,
+            n_slots   => $m->{n_slots},
+        };
+    }
+    return \@info;
 }
 
 # ============================================================================
@@ -139,7 +326,9 @@ sub get_slot {
 
 sub _tokenize_messages {
     my ($self, $messages) = @_;
-    my $vocab = $self->{model}->vocab;
+    my $slot = $self->{get_slot_model} // $self->{models}[0];
+    my $model = $self->{models}[0];
+    my $vocab = $model->{config}->load_model->vocab;
     my @tokens;
 
     for my $msg (@$messages) {
@@ -168,13 +357,27 @@ sub chat_completion {
     $n_predict //= 256;
     $opts //= {};
 
-    my $slot = $self->{contexts}[$slot_id];
+    my $m = $self->get_model_by_slot($slot_id);
+    return undef unless $m;
+    my $local = $slot_id - $m->{slot_offset};
+    my $slot = $m->{contexts}[$local];
     my $ctx = $slot->{context};
-    my $vocab = $self->{model}->vocab;
+    my $model = $m->{config};
+    my $loaded_model = $m->{loaded_model} || do {
+        $m->{loaded_model} = $model->load_model;
+        $m->{loaded_model};
+    };
+    my $vocab = $loaded_model->vocab;
 
-    # Tokenize messages
-    my @tokens = @{$self->_tokenize_messages($messages)};
-    my $batch = $self->_build_prompt_batch(\@tokens);
+    my @tokens;
+    for my $msg (@$messages) {
+        my $content = $msg->{content} // '';
+        my @toks = $vocab->tokenize($content);
+        push @tokens, @toks;
+    }
+
+    my $batch = Llama::Batch->new(max_tokens => scalar @tokens);
+    $batch->set_tokens(map { [@tokens[$_], $_, 0] } 0 .. $#tokens);
 
     my $t0 = time();
     $ctx->decode($batch);
@@ -183,7 +386,6 @@ sub chat_completion {
     $slot->{state} = 'idle';
     $batch->DESTROY;
 
-    # Autoregressive generation
     my @output;
     my $n_ctx = $ctx->n_ctx;
     my $t_gen_start = time();
@@ -204,8 +406,7 @@ sub chat_completion {
         for my $j (0 .. $vocab->n_tokens - 1) {
             $logits[$j] = Llama::_read_float($logit_ptr, $j);
         }
-        
-        # Simple greedy sampling
+
         my $max_logit = $logits[0];
         my $new_tok = 0;
         for my $j (1 .. $#logits) {
@@ -214,7 +415,7 @@ sub chat_completion {
                 $new_tok = $j;
             }
         }
-        
+
         push @tokens, $new_tok;
         $slot->{n_tokens}++;
 
@@ -229,11 +430,11 @@ sub chat_completion {
     $self->{stats}{prompt_tokens_total} += $slot->{n_tokens};
     $self->{stats}{completion_tokens_total} += scalar @output;
 
-    my $result = {
+    return {
         id                => "chatcmpl-$slot_id",
         object            => "chat.completion",
         created           => time(),
-        model             => $self->{model}->desc,
+        model             => $model->model_name,
         choices           => [{
             index        => 0,
             message      => { role => "assistant", content => join('', @output) },
@@ -255,8 +456,6 @@ sub chat_completion {
             predicted_per_second => scalar @output ? scalar @output / ($slot->{t_gen} / 1000) : 0,
         },
     };
-
-    return $result;
 }
 
 # ============================================================================
@@ -268,12 +467,21 @@ sub completion {
     $n_predict //= 256;
     $opts //= {};
 
-    my $slot = $self->{contexts}[$slot_id];
+    my $m = $self->get_model_by_slot($slot_id);
+    return undef unless $m;
+    my $local = $slot_id - $m->{slot_offset};
+    my $slot = $m->{contexts}[$local];
     my $ctx = $slot->{context};
-    my $vocab = $self->{model}->vocab;
+    my $model = $m->{config};
+    my $loaded_model = $m->{loaded_model} || do {
+        $m->{loaded_model} = $model->load_model;
+        $m->{loaded_model};
+    };
+    my $vocab = $loaded_model->vocab;
 
     my @tokens = $vocab->tokenize($prompt);
-    my $batch = $self->_build_prompt_batch(\@tokens);
+    my $batch = Llama::Batch->new(max_tokens => scalar @tokens);
+    $batch->set_tokens(map { [@tokens[$_], $_, 0] } 0 .. $#tokens);
 
     my $t0 = time();
     $ctx->decode($batch);
@@ -282,7 +490,6 @@ sub completion {
     $slot->{state} = 'idle';
     $batch->DESTROY;
 
-    # Autoregressive generation
     my @output;
     my $n_ctx = $ctx->n_ctx;
     my $t_gen_start = time();
@@ -303,8 +510,7 @@ sub completion {
         for my $j (0 .. $vocab->n_tokens - 1) {
             $logits[$j] = Llama::_read_float($logit_ptr, $j);
         }
-        
-        # Simple greedy sampling
+
         my $max_logit = $logits[0];
         my $new_tok = 0;
         for my $j (1 .. $#logits) {
@@ -313,7 +519,7 @@ sub completion {
                 $new_tok = $j;
             }
         }
-        
+
         push @tokens, $new_tok;
         $slot->{n_tokens}++;
 
@@ -328,11 +534,11 @@ sub completion {
     $self->{stats}{prompt_tokens_total} += $slot->{n_tokens};
     $self->{stats}{completion_tokens_total} += scalar @output;
 
-    my $result = {
+    return {
         id        => "cmpl-$slot_id",
         object    => "text_completion",
         created   => time(),
-        model     => $self->{model}->desc,
+        model     => $model->model_name,
         choices   => [{
             text        => join('', @output),
             index       => 0,
@@ -345,8 +551,6 @@ sub completion {
             total_tokens     => $slot->{n_tokens} + scalar @output,
         },
     };
-
-    return $result;
 }
 
 # ============================================================================
@@ -356,12 +560,21 @@ sub completion {
 sub embeddings {
     my ($self, $slot_id, $input) = @_;
 
-    my $slot = $self->{contexts}[$slot_id];
+    my $m = $self->get_model_by_slot($slot_id);
+    return undef unless $m;
+    my $local = $slot_id - $m->{slot_offset};
+    my $slot = $m->{contexts}[$local];
     my $ctx = $slot->{context};
-    my $vocab = $self->{model}->vocab;
+    my $model = $m->{config};
+    my $loaded_model = $m->{loaded_model} || do {
+        $m->{loaded_model} = $model->load_model;
+        $m->{loaded_model};
+    };
+    my $vocab = $loaded_model->vocab;
 
     my @tokens = $vocab->tokenize($input);
-    my $batch = $self->_build_prompt_batch(\@tokens);
+    my $batch = Llama::Batch->new(max_tokens => scalar @tokens);
+    $batch->set_tokens(map { [@tokens[$_], $_, 0] } 0 .. $#tokens);
 
     $ctx->decode($batch);
     $batch->DESTROY;
@@ -378,17 +591,43 @@ sub embeddings {
 }
 
 # ============================================================================
-# KV cache persistence — mmap-backed
+# KV cache persistence
 # ============================================================================
 
 sub _slot_cache_path {
-    my ($self, $slot_id) = @_;
-    return "$self->{cache_dir}/slot_${slot_id}.cache";
+    my ($self, $arg1, $arg2) = @_;
+    my $m;
+    my $slot_id;
+    
+    if (ref $arg1 eq 'HASH' && exists $arg1->{model_name}) {
+        $m = $arg1;
+        $slot_id = $arg2;
+    } else {
+        $slot_id = $arg1;
+        $m = $self->get_model_by_slot($slot_id);
+        return undef unless $m;
+    }
+    
+    my $model_name = $m->{model_name} || "default";
+    (my $safe_name = $model_name) =~ s/[^a-zA-Z0-9_-]/_/g;
+    return "$self->{cache_dir}/${safe_name}_slot_${slot_id}.cache";
 }
 
 sub _save_slot_cache {
-    my ($self, $slot_id) = @_;
-    my $slot = $self->{contexts}[$slot_id];
+    my ($self, $arg1, $arg2) = @_;
+    my $m;
+    my $slot_id;
+    
+    if (ref $arg1 eq 'HASH' && exists $arg1->{model_name}) {
+        $m = $arg1;
+        $slot_id = $arg2;
+    } else {
+        $slot_id = $arg1;
+        $m = $self->get_model_by_slot($slot_id);
+        return 0 unless $m;
+    }
+    
+    my $slot = $m->{contexts}[$slot_id];
     my $ctx = $slot->{context};
     return 0 unless $slot->{n_tokens} > 0;
 
@@ -396,7 +635,7 @@ sub _save_slot_cache {
     return 0 unless $size > 0;
 
     my $data = $ctx->seq_get_state(0);
-    my $path = $self->_slot_cache_path($slot_id);
+    my $path = $self->_slot_cache_path($m, $slot_id);
     my $actual_size = length($data);
 
     my $tmp = "$path.tmp";
@@ -410,17 +649,29 @@ sub _save_slot_cache {
     };
     if ($@) {
         unlink $tmp if -f $tmp;
-        warn "[Cache] save_slot_cache($slot_id): $@";
+        warn "[Cache] save_slot_cache($m->{model_name}, $slot_id): $@";
         return 0;
     }
     return -s $path;
 }
 
 sub _restore_slot_cache {
-    my ($self, $slot_id) = @_;
-    my $slot = $self->{contexts}[$slot_id];
+    my ($self, $arg1, $arg2) = @_;
+    my $m;
+    my $slot_id;
+    
+    if (ref $arg1 eq 'HASH' && exists $arg1->{model_name}) {
+        $m = $arg1;
+        $slot_id = $arg2;
+    } else {
+        $slot_id = $arg1;
+        $m = $self->get_model_by_slot($slot_id);
+        return 0 unless $m;
+    }
+    
+    my $slot = $m->{contexts}[$slot_id];
     my $ctx = $slot->{context};
-    my $path = $self->_slot_cache_path($slot_id);
+    my $path = $self->_slot_cache_path($m, $slot_id);
     return 0 unless -f $path;
 
     my $file_size = -s $path;
@@ -443,79 +694,17 @@ sub _restore_slot_cache {
         return $restored;
     };
     if ($@) {
-        warn "[Cache] restore_slot_cache($slot_id): $@";
-        return 0;
-    }
-}
-
-sub save_slot_to_mmap {
-    my ($self, $slot_id, $file_path) = @_;
-    return 0 unless $HAVE_MMAP;
-    my $slot = $self->{contexts}[$slot_id];
-    my $ctx = $slot->{context};
-    return unless $slot->{n_tokens} > 0;
-
-    my $size = $ctx->seq_state_size(0);
-    return unless $size > 0;
-
-    my $data = $ctx->seq_get_state(0);
-
-    eval {
-        open my $fh, '>:raw', $file_path or die "Cannot write $file_path: $!";
-        print $fh $data;
-        close $fh;
-
-        my $mmap_data;
-        my $fh2 = IO::File->new($file_path, '<:raw') or die unless $HAVE_IO_FILE;
-        my $fsize = -s $file_path;
-        my $prot = $HAVE_MMAP ? (PROT_READ() || 1) : 1;
-        my $map = $HAVE_MMAP ? (MAP_SHARED() || 1) : 1;
-        mmap $mmap_data, $fsize, $prot, $map, $fh2;
-        close $fh2;
-
-        my $restored = $ctx->seq_set_state($mmap_data, 0);
-        return $restored;
-    };
-    if ($@) {
-        warn "[Cache] save_slot_to_mmap($slot_id): $@";
-        return 0;
-    }
-    return $size;
-}
-
-sub load_slot_from_mmap {
-    my ($self, $slot_id, $file_path) = @_;
-    return 0 unless $HAVE_MMAP;
-    my $slot = $self->{contexts}[$slot_id];
-    my $ctx = $slot->{context};
-    return unless -f $file_path;
-
-    my $file_size = -s $file_path;
-    return unless $file_size > 0;
-
-    my $ctx_size = $ctx->seq_state_size(0);
-    return unless $ctx_size > 0 && $file_size >= $ctx_size;
-
-    eval {
-        open my $fh, '<:raw', $file_path or die "Cannot read $file_path: $!";
-        my $data;
-        my $bytes_read = read $fh, $data, $ctx_size;
-        close $fh;
-        die "read $bytes_read bytes, expected $ctx_size" unless defined $bytes_read && $bytes_read == $ctx_size;
-
-        my $restored = $ctx->seq_set_state($data, 0);
-        $slot->{n_tokens} = $restored > 0 ? $ctx_size : 0;
-        return $restored;
-    };
-    if ($@) {
-        warn "[Cache] load_slot_from_mmap($slot_id): $@";
+        warn "[Cache] restore_slot_cache($m->{model_name}, $slot_id): $@";
         return 0;
     }
 }
 
 sub save_slot_to_mmap_file {
     my ($self, $slot_id, $file_path) = @_;
-    my $slot = $self->{contexts}[$slot_id];
+    my $m = $self->get_model_by_slot($slot_id);
+    return 0 unless $m;
+    my $local = $slot_id - $m->{slot_offset};
+    my $slot = $m->{contexts}[$local];
     my $ctx = $slot->{context};
     return 0 unless $slot->{n_tokens} > 0;
 
@@ -543,7 +732,10 @@ sub save_slot_to_mmap_file {
 
 sub load_slot_from_mmap_file {
     my ($self, $slot_id, $file_path) = @_;
-    my $slot = $self->{contexts}[$slot_id];
+    my $m = $self->get_model_by_slot($slot_id);
+    return 0 unless $m;
+    my $local = $slot_id - $m->{slot_offset};
+    my $slot = $m->{contexts}[$local];
     my $ctx = $slot->{context};
     return 0 unless -f $file_path;
 
@@ -596,58 +788,17 @@ sub list_cached_slots {
 }
 
 # ============================================================================
-# Stats
-# ============================================================================
-
-sub get_stats {
-    my ($self) = @_;
-    return {%{$self->{stats}}};
-}
-
-sub reset_stats {
-    my ($self) = @_;
-    $self->{stats} = {
-        tokens_total            => 0,
-        prompt_tokens_total     => 0,
-        completion_tokens_total => 0,
-    };
-}
-
-# ============================================================================
-# Model info
-# ============================================================================
-
-sub model_desc {
-    my ($self) = @_;
-    return $self->{model}->desc;
-}
-
-sub model_n_ctx_train {
-    my ($self) = @_;
-    return $self->{model}->n_ctx_train;
-}
-
-sub model_n_embd {
-    my ($self) = @_;
-    return $self->{model}->n_embd;
-}
-
-sub model_n_params {
-    my ($self) = @_;
-    return $self->{model}->n_params;
-}
-
-# ============================================================================
 # Cleanup
 # ============================================================================
 
 sub DESTROY {
     my ($self) = @_;
     if ($self) {
-        for my $slot (@{$self->{contexts}}) {
-            $slot->{context}->DESTROY if $slot->{context};
+        for my $m (@{$self->{models}}) {
+            for my $slot (@{$m->{contexts}}) {
+                $slot->{context}->DESTROY if $slot->{context};
+            }
         }
-        $self->{model}->DESTROY if $self->{model};
         Llama::llama_backend_free();
     }
 }

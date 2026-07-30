@@ -16,16 +16,48 @@ BEGIN {
     if ($@) {
         print STDERR "[llama.pm] WARNING: Llama::Cache not available: $@";
     } else {
+        my $preset_file = $ENV{PRESET_FILE} || "/models/llamacpp_presets.ini";
+        my $models_env = $ENV{MODELS};
+        my @models;
+
+        if ($models_env) {
+            for my $model_spec (split /\|/, $models_env) {
+                my ($path, $name) = split /:/, $model_spec, 2;
+                next unless $path;
+                push @models, {
+                    path => $path,
+                    name => $name || ($path =~ s/\.gguf$//r),
+                    n_slots => 4,
+                };
+            }
+        } elsif (my $model_path = $ENV{MODEL_PATH} || "/models/default.gguf") {
+            push @models, {
+                path => $model_path,
+                name => ($model_path =~ s/\.gguf$//r),
+                n_slots => 4,
+            };
+        }
+
         eval {
-            $CACHE = Llama::Cache->new(
-                model_path => $ENV{MODEL_PATH} || "/models/default.gguf",
-                n_ctx      => 4096,
-                n_batch    => 512,
-                n_threads  => 16,
-                n_slots    => 4,
-                cache_dir  => "/dev/shm/llama_cache",
-            );
-            print STDERR "[llama.pm] Llama::Cache initialized with model_path=$ENV{MODEL_PATH}\n";
+            if (@models) {
+                $CACHE = Llama::Cache->new(
+                    models    => \@models,
+                    preset_file => $preset_file,
+                    n_slots   => 4,
+                    cache_dir => "/dev/shm/llama_cache",
+                );
+                print STDERR "[llama.pm] Llama::Cache initialized with " . scalar(@models) . " model(s)\n";
+            } else {
+                $CACHE = Llama::Cache->new(
+                    model_path => $ENV{MODEL_PATH} || "/models/default.gguf",
+                    n_ctx      => 4096,
+                    n_batch    => 512,
+                    n_threads  => 16,
+                    n_slots    => 4,
+                    cache_dir  => "/dev/shm/llama_cache",
+                );
+                print STDERR "[llama.pm] Llama::Cache initialized with model_path=$ENV{MODEL_PATH}\n";
+            }
         };
         if ($@) {
             print STDERR "[llama.pm] ERROR initializing Llama::Cache: $@";
@@ -309,13 +341,8 @@ sub cache_models {
     my ($r) = @_;
     return HTTP_INTERNAL_SERVER_ERROR unless _check_cache($r);
     $r->send_http_header("application/json");
-    my $model_info = {
-        id => $CACHE->model_desc,
-        object => "model",
-        owned_by => "llama.cpp",
-        permissions => [],
-    };
-    return _json_response($r, [$model_info]);
+    my $models = $CACHE->model_info();
+    return _json_response($r, $models);
 }
 
 sub cache_tokenize {
@@ -361,11 +388,6 @@ sub cache_metrics {
 
     my $slots = $CACHE->get_slots();
     my $stats = $CACHE->get_stats();
-    my $perf;
-    my $slot0 = $CACHE->get_slot(0);
-    if ($slot0 && $slot0->{context}) {
-        $perf = $slot0->{context}->perf_tkvll();
-    }
 
     my @slot_metrics;
     for my $id (sort keys %$slots) {
@@ -374,16 +396,13 @@ sub cache_metrics {
             id => $id,
             state => $s->{state},
             n_tokens => $s->{n_tokens},
+            model => $s->{model} // "unknown",
         };
     }
 
     return _json_response($r, {
         slots => \@slot_metrics,
         stats => $stats,
-        kv_cache_usage => $perf ? {
-            used => $perf->{kv_used_cells} // 0,
-            max => $perf->{kv_max_cells} // 0,
-        } : undef,
     });
 }
 
@@ -420,6 +439,13 @@ sub _read_body {
 sub _get_slot_id {
     my ($r, $req) = @_;
     return $req->{id_slot} // 0 + 0;
+}
+
+sub _get_model {
+    my ($r, $req) = @_;
+    my $model_name = $req->{model};
+    return $CACHE->get_model_by_name($model_name) if $model_name && $CACHE->get_model_by_name($model_name);
+    return $CACHE->get_model();
 }
 
 sub _json_response {
