@@ -237,6 +237,7 @@ my $cancelled = $stream->is_cancelled();
 14. ✅ **Llama::ModelConfig** — preset file parsing (INI format), per-model config with key aliasing (INI → Perl), global defaults + per-model overrides
 15. ✅ **Multi-model Llama::Cache** — accept list of ModelConfig objects, each model has independent contexts/slots, global slot namespace, model routing by name
 16. ✅ **nginx multi-model routing** — MODELS env var for multiple models, preset_file env var, model selection from request body
+17. ✅ **Dynamic model loading** — models loaded on-demand from request body `model` field, searched in `MODEL_PATH` directories (colon-separated), `MODEL` env var for default model, `MODEL_PATH` for search paths
 
 ## Test Coverage
 
@@ -302,6 +303,8 @@ Result: PASS
 20. **Multi-model architecture** — each model has its own set of contexts/slots; global slot namespace with offsets; model routing by name from request body
 21. **ModelConfig preset parsing** — INI file parsed in Perl (no libllama dependency); global `[*]` defaults merged with per-model overrides; key aliasing maps INI keys (ctx-size) to Perl keys (n_ctx)
 22. **Model loaded once per Cache instance** — `load_model()` called once and stored in model hash; vocab pointer stays valid across requests
+23. **Dynamic model loading** — models loaded on-demand when first requested; searched in `MODEL_PATH` directories for `${name}.gguf` or exact path match; `MODEL` env var for single default model; `MODEL_PATH` colon-separated for search directories
+24. **mmap model loading** — `llama_model_load_from_file_mmap()` used for all models; enables faster loading and shared memory across contexts
 
 ## mmap from Perl (no XS changes needed)
 
@@ -672,8 +675,8 @@ sub cache_embeddings {
 ## Remaining Work
 
 1. ~~**nginx integration**~~ — ✅ added `/api/cache` location blocks to nginx.conf
-2. ~~**lib/perl/llama.pm**~~ — ✅ added cache handlers with multi-model routing
+2. ~~**lib/perl/llama.pm**~~ — ✅ added cache handlers with dynamic model loading
 3. **Remaining llama-server endpoints** — health, tokenize, detokenize, props, streaming endpoints
 4. **Integration tests** — end-to-end with nginx
 5. **Proper sampler** — deferred: llama.cpp bug in `llama_sampler_sample` with top_k/top_p/temp samplers on Qwen3.5 ROCmFP4 model (`GGML_ASSERT(cur_p.selected >= 0 && cur_p.selected < (int32_t) cur_p.size)` fails in llama-sampler.cpp:866). Greedy sampling works and is used as stopgap.
-6. **Multi-model preset testing** — test preset file loading with real model presets
+6. ~~**Multi-model preset testing**~~ — ✅ preset file loading tested with real model presets
