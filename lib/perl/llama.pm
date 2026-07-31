@@ -17,8 +17,8 @@ BEGIN {
         print STDERR "[llama.pm] WARNING: Llama::Cache not available: $@";
     } else {
         my $preset_file = $ENV{PRESET_FILE} || "/models/llamacpp_presets.ini";
-        my $model_path = $ENV{MODEL};
-        my $search_paths_env = $ENV{MODEL_PATH};
+        my $model_path = $ENV{MODEL} // '';
+        my $search_paths_env = $ENV{MODEL_PATH} // '';
         my @search_paths;
 
         if ($search_paths_env) {
@@ -41,7 +41,7 @@ BEGIN {
                 n_slots    => 4,
                 cache_dir  => "/dev/shm/llama_cache",
             );
-            print STDERR "[llama.pm] Llama::Cache initialized, MODEL=$model_path, MODEL_PATH=$search_paths_env\n";
+            print STDERR "[llama.pm] Llama::Cache initialized, MODEL=$model_path, MODEL_PATH=$search_paths_env\n" if $model_path || $search_paths_env;
         };
         if ($@) {
             print STDERR "[llama.pm] ERROR initializing Llama::Cache: $@";

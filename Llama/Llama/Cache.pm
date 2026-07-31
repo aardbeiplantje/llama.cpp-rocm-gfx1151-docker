@@ -17,9 +17,6 @@ my $HAVE_IO_FILE = eval { require IO::File; IO::File->import(); 1 };
 
 use Llama;
 
-require XSLoader;
-XSLoader::load('Llama', $VERSION);
-
 # ============================================================================
 # Initialization
 # ============================================================================
