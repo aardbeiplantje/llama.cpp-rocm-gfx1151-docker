@@ -13,7 +13,6 @@ use Llama::Vocab;
 use Llama::ModelConfig;
 
 my $HAVE_MMAP = eval { require Sys::Mmap; Sys::Mmap->import(); 1 };
-my $HAVE_IO_FILE = eval { require IO::File; IO::File->import(); 1 };
 
 use Llama;
 
@@ -159,6 +158,9 @@ sub new {
             prompt_tokens_total     => 0,
             completion_tokens_total => 0,
         },
+        default_n_slots => $opts{n_slots} || 4,
+        conv_id_map     => {},
+        preset_file     => $opts{preset_file},
     }, $class;
 }
 
@@ -265,6 +267,18 @@ sub get_slot {
     return undef;
 }
 
+sub get_slot_by_conv_id {
+    my ($self, $conv_id) = @_;
+    my $slot_id = $self->_get_slot_by_conv_id($conv_id);
+    return $self->get_slot($slot_id) if defined $slot_id;
+    return undef;
+}
+
+sub set_slot_by_conv_id {
+    my ($self, $conv_id, $slot_id) = @_;
+    $self->_set_slot_by_conv_id($conv_id, $slot_id);
+}
+
 sub get_model {
     my ($self) = @_;
     return $self->{models}[0];
@@ -280,8 +294,38 @@ sub get_models {
 # ============================================================================
 
 sub alloc_slot {
-    my ($self) = @_;
-    for my $m (@{$self->{models}}) {
+    my ($self, $conv_id, $model_name) = @_;
+    
+    if ($conv_id) {
+        my $existing_slot_id = $self->_get_slot_by_conv_id($conv_id);
+        if (defined $existing_slot_id) {
+            my $existing_model = $self->get_model_by_slot($existing_slot_id);
+            if ($existing_model) {
+                my $local = $existing_slot_id - $existing_model->{slot_offset};
+                if ($existing_model->{contexts}[$local]{state} eq 'idle') {
+                    if (!$model_name || $existing_model->{model_name} eq $model_name) {
+                        $existing_model->{contexts}[$local]{state} = 'busy';
+                        $self->_restore_slot_cache($existing_model, $local);
+                        return $existing_slot_id;
+                    }
+                }
+            }
+        }
+    }
+    
+    my @models_to_check;
+    if ($model_name) {
+        for my $m (@{$self->{models}}) {
+            if ($m->{model_name} eq $model_name) {
+                push @models_to_check, $m;
+            }
+        }
+        push @models_to_check, @{$self->{models}} unless @models_to_check;
+    } else {
+        @models_to_check = @{$self->{models}};
+    }
+    
+    for my $m (@models_to_check) {
         for my $i (0 .. $m->{n_slots} - 1) {
             if ($m->{contexts}[$i]{state} eq 'idle') {
                 $m->{contexts}[$i]{state} = 'busy';
@@ -293,8 +337,29 @@ sub alloc_slot {
     return undef;
 }
 
-sub free_slot {
+sub _get_slot_by_conv_id {
+    my ($self, $conv_id) = @_;
+    return $self->{conv_id_map}{$conv_id} if exists $self->{conv_id_map}{$conv_id};
+    return undef;
+}
+
+sub _set_slot_by_conv_id {
+    my ($self, $conv_id, $slot_id) = @_;
+    $self->{conv_id_map}{$conv_id} = $slot_id;
+}
+
+sub _clear_slot_by_conv_id {
     my ($self, $slot_id) = @_;
+    for my $cid (keys %{$self->{conv_id_map}}) {
+        if ($self->{conv_id_map}{$cid} == $slot_id) {
+            delete $self->{conv_id_map}{$cid};
+            return;
+        }
+    }
+}
+
+sub free_slot {
+    my ($self, $slot_id, $conv_id) = @_;
     my $m = $self->get_model_by_slot($slot_id);
     return unless $m;
     my $local = $slot_id - $m->{slot_offset};
@@ -302,6 +367,7 @@ sub free_slot {
     $m->{contexts}[$local]{state} = 'idle';
     $m->{contexts}[$local]{n_tokens} = 0;
     $m->{contexts}[$local]{t_start} = 0;
+    $self->_clear_slot_by_conv_id($slot_id);
 }
 
 sub get_slots {
@@ -415,10 +481,32 @@ sub chat_completion {
     $n_predict //= 256;
     $opts //= {};
 
-    my $m = $self->get_model_by_slot($slot_id);
-    return undef unless $m;
-    my $local = $slot_id - $m->{slot_offset};
-    my $slot = $m->{contexts}[$local];
+    my $conv_id = $opts->{conv_id};
+    my $model_name = $opts->{model};
+    my $slot;
+    my $m;
+    my $local;
+    
+    if ($conv_id) {
+        $slot = $self->get_slot_by_conv_id($conv_id);
+        if ($slot) {
+            my $sid = $self->_get_slot_by_conv_id($conv_id);
+            $m = $self->get_model_by_slot($sid);
+            $local = $sid - $m->{slot_offset};
+        }
+    }
+    
+    unless ($slot) {
+        $slot_id = $self->alloc_slot($conv_id, $model_name);
+        return undef unless defined $slot_id;
+        $m = $self->get_model_by_slot($slot_id);
+        $local = $slot_id - $m->{slot_offset};
+        $slot = $m->{contexts}[$local];
+        if ($conv_id) {
+            $self->set_slot_by_conv_id($conv_id, $slot_id);
+        }
+    }
+    
     my $ctx = $slot->{context};
     my $model = $m->{config};
     my $loaded_model = $m->{loaded_model} || do {
@@ -435,7 +523,7 @@ sub chat_completion {
     }
 
     my $batch = Llama::Batch->new(max_tokens => scalar @tokens);
-    $batch->set_tokens(map { [@tokens[$_], $_, 0] } 0 .. $#tokens);
+    $batch->set_tokens(map { [$tokens[$_], $_, 0] } 0 .. $#tokens);
 
     my $t0 = time();
     $ctx->decode($batch);
@@ -513,6 +601,7 @@ sub chat_completion {
             predicted_per_token_ms => scalar @output ? $slot->{t_gen} / scalar @output : 0,
             predicted_per_second => scalar @output ? scalar @output / ($slot->{t_gen} / 1000) : 0,
         },
+        conv_id           => $conv_id,
     };
 }
 
@@ -525,10 +614,32 @@ sub completion {
     $n_predict //= 256;
     $opts //= {};
 
-    my $m = $self->get_model_by_slot($slot_id);
-    return undef unless $m;
-    my $local = $slot_id - $m->{slot_offset};
-    my $slot = $m->{contexts}[$local];
+    my $conv_id = $opts->{conv_id};
+    my $model_name = $opts->{model};
+    my $slot;
+    my $m;
+    my $local;
+    
+    if ($conv_id) {
+        $slot = $self->get_slot_by_conv_id($conv_id);
+        if ($slot) {
+            my $sid = $self->_get_slot_by_conv_id($conv_id);
+            $m = $self->get_model_by_slot($sid);
+            $local = $sid - $m->{slot_offset};
+        }
+    }
+    
+    unless ($slot) {
+        $slot_id = $self->alloc_slot($conv_id, $model_name);
+        return undef unless defined $slot_id;
+        $m = $self->get_model_by_slot($slot_id);
+        $local = $slot_id - $m->{slot_offset};
+        $slot = $m->{contexts}[$local];
+        if ($conv_id) {
+            $self->set_slot_by_conv_id($conv_id, $slot_id);
+        }
+    }
+    
     my $ctx = $slot->{context};
     my $model = $m->{config};
     my $loaded_model = $m->{loaded_model} || do {
@@ -539,7 +650,7 @@ sub completion {
 
     my @tokens = $vocab->tokenize($prompt);
     my $batch = Llama::Batch->new(max_tokens => scalar @tokens);
-    $batch->set_tokens(map { [@tokens[$_], $_, 0] } 0 .. $#tokens);
+    $batch->set_tokens(map { [$tokens[$_], $_, 0] } 0 .. $#tokens);
 
     my $t0 = time();
     $ctx->decode($batch);
@@ -608,6 +719,7 @@ sub completion {
             completion_tokens => scalar @output,
             total_tokens     => $slot->{n_tokens} + scalar @output,
         },
+        conv_id   => $conv_id,
     };
 }
 
@@ -616,12 +728,35 @@ sub completion {
 # ============================================================================
 
 sub embeddings {
-    my ($self, $slot_id, $input) = @_;
+    my ($self, $slot_id, $input, $opts) = @_;
+    $opts //= {};
 
-    my $m = $self->get_model_by_slot($slot_id);
-    return undef unless $m;
-    my $local = $slot_id - $m->{slot_offset};
-    my $slot = $m->{contexts}[$local];
+    my $conv_id = $opts->{conv_id};
+    my $model_name = $opts->{model};
+    my $slot;
+    my $m;
+    my $local;
+    
+    if ($conv_id) {
+        $slot = $self->get_slot_by_conv_id($conv_id);
+        if ($slot) {
+            my $sid = $self->_get_slot_by_conv_id($conv_id);
+            $m = $self->get_model_by_slot($sid);
+            $local = $sid - $m->{slot_offset};
+        }
+    }
+    
+    unless ($slot) {
+        $slot_id = $self->alloc_slot($conv_id, $model_name);
+        return undef unless defined $slot_id;
+        $m = $self->get_model_by_slot($slot_id);
+        $local = $slot_id - $m->{slot_offset};
+        $slot = $m->{contexts}[$local];
+        if ($conv_id) {
+            $self->set_slot_by_conv_id($conv_id, $slot_id);
+        }
+    }
+    
     my $ctx = $slot->{context};
     my $model = $m->{config};
     my $loaded_model = $m->{loaded_model} || do {
@@ -632,7 +767,7 @@ sub embeddings {
 
     my @tokens = $vocab->tokenize($input);
     my $batch = Llama::Batch->new(max_tokens => scalar @tokens);
-    $batch->set_tokens(map { [@tokens[$_], $_, 0] } 0 .. $#tokens);
+    $batch->set_tokens(map { [$tokens[$_], $_, 0] } 0 .. $#tokens);
 
     $ctx->decode($batch);
     $batch->DESTROY;
@@ -735,6 +870,7 @@ sub _restore_slot_cache {
     my $file_size = -s $path;
     return 0 unless $file_size > 8;
 
+    my $result = 0;
     eval {
         open my $fh, '<:raw', $path or die "Cannot read $path: $!";
         my $header;
@@ -743,13 +879,23 @@ sub _restore_slot_cache {
         my ($n_tokens, $data_size) = unpack('NN', $header);
 
         my $data;
-        $bytes_read = read $fh, $data, $data_size;
-        close $fh;
-        die "read $bytes_read data bytes, expected $data_size" unless defined $bytes_read && $bytes_read == $data_size;
+        if ($HAVE_MMAP && $data_size > 0) {
+            my $data_mmap;
+            open my $fh2, '<:raw', $path or die "Cannot open $path: $!";
+            my $prot = PROT_READ() || 1;
+            my $map = MAP_SHARED() || 1;
+            my $_mmap_ok = mmap $data_mmap, $data_size, $prot, $map, $fh2, 8;
+            close $fh2;
+            $data = $data_mmap;
+        } else {
+            $bytes_read = read $fh, $data, $data_size;
+            close $fh;
+            die "read $bytes_read data bytes, expected $data_size" unless defined $bytes_read && $bytes_read == $data_size;
+        }
 
-        my $restored = $ctx->seq_set_state($data, 0);
+        $result = $ctx->seq_set_state($data, 0);
         $slot->{n_tokens} = $n_tokens;
-        return $restored;
+        return $result;
     };
     if ($@) {
         warn "[Cache] restore_slot_cache($m->{model_name}, $slot_id): $@";
@@ -809,9 +955,19 @@ sub load_slot_from_mmap_file {
         my ($n_tokens, $data_size) = unpack('NN', $header);
 
         my $data;
-        $bytes_read = read $fh, $data, $data_size;
-        close $fh;
-        die "read $bytes_read data bytes, expected $data_size" unless defined $bytes_read && $bytes_read == $data_size;
+        if ($HAVE_MMAP && $data_size > 0) {
+            my $data_mmap;
+            open my $fh2, '<:raw', $file_path or die "Cannot open $file_path: $!";
+            my $prot = PROT_READ() || 1;
+            my $map = MAP_SHARED() || 1;
+            my $_mmap_ok = mmap $data_mmap, $data_size, $prot, $map, $fh2, 8;
+            close $fh2;
+            $data = $data_mmap;
+        } else {
+            $bytes_read = read $fh, $data, $data_size;
+            close $fh;
+            die "read $bytes_read data bytes, expected $data_size" unless defined $bytes_read && $bytes_read == $data_size;
+        }
 
         $result = $ctx->seq_set_state($data, 0);
         $slot->{n_tokens} = $n_tokens;

@@ -1,7 +1,6 @@
 use strict;
 use warnings;
 use ExtUtils::MakeMaker;
-use Config;
 
 my $rocm_path = $ENV{ROCM_PATH} || '/opt/rocm';
 my $llama_src = $ENV{LLAMA_SRC}

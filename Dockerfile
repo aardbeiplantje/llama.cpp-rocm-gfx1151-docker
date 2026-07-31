@@ -92,6 +92,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libnginx-mod-http-perl \
     libnginx-mod-http-auth-pam \
     libjson-xs-perl \
+    libsys-mmap-perl \
     ca-certificates \
     strace \
     lsof \

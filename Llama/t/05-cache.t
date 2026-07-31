@@ -173,6 +173,46 @@ ok($loaded > 0, "load_slot_from_mmap_file loaded $loaded bytes");
 my $n_tokens_loaded = $cache->get_slot($slot_d)->{n_tokens};
 ok($n_tokens_loaded > 0 && $n_tokens_loaded < 1000, "loaded slot has $n_tokens_loaded tokens");
 
+# Test 17: conv_id slot reuse
+my $conv_id = "test-conv-123";
+my $slot_e = $cache->alloc_slot($conv_id);
+ok(defined $slot_e, "alloc_slot with conv_id returned $slot_e");
+my $messages3 = [{ role => "user", content => "First turn" }];
+$cache->chat_completion($slot_e, $messages3, 8, { conv_id => $conv_id });
+my $n_tokens_first = $cache->get_slot($slot_e)->{n_tokens};
+ok($n_tokens_first > 0, "first turn has $n_tokens_first tokens");
+
+my $slot_f = $cache->alloc_slot($conv_id);
+is($slot_f, $slot_e, "alloc_slot with same conv_id returns same slot ($slot_f == $slot_e)");
+
+my $slot_g = $cache->alloc_slot("different-conv");
+ok(defined $slot_g && $slot_g != $slot_e, "alloc_slot with different conv_id returns different slot ($slot_g != $slot_e)");
+
+# Test 18: mmap file I/O with offset (skip header)
+my $slot_h = $cache->alloc_slot();
+my $messages4 = [{ role => "user", content => "Test mmap offset" }];
+$cache->chat_completion($slot_h, $messages4, 8);
+my $mmap_offset_file = "$cache->{cache_dir}/mmap_offset_test.cache";
+my $saved_offset = $cache->save_slot_to_mmap_file($slot_h, $mmap_offset_file);
+ok($saved_offset > 0, "save_slot_to_mmap_file with offset saved $saved_offset bytes");
+
+my $slot_i = $cache->alloc_slot();
+my $loaded_offset = $cache->load_slot_from_mmap_file($slot_i, $mmap_offset_file);
+ok($loaded_offset > 0, "load_slot_from_mmap_file with offset loaded $loaded_offset bytes");
+my $n_tokens_loaded_offset = $cache->get_slot($slot_i)->{n_tokens};
+ok($n_tokens_loaded_offset > 0 && $n_tokens_loaded_offset < 1000, "loaded slot with offset has $n_tokens_loaded_offset tokens");
+
+# Test 19: auto-restore uses mmap when available
+my $slot_j = $cache->alloc_slot();
+my $messages5 = [{ role => "user", content => "Test auto-restore mmap" }];
+$cache->chat_completion($slot_j, $messages5, 8);
+my $n_tokens_before_free = $cache->get_slot($slot_j)->{n_tokens};
+ok($n_tokens_before_free > 0, "slot $slot_j has $n_tokens_before_free tokens before free");
+$cache->free_slot($slot_j);
+my $slot_k = $cache->alloc_slot();
+my $n_tokens_after_restore = $cache->get_slot($slot_k)->{n_tokens};
+ok($n_tokens_after_restore > 0 && $n_tokens_after_restore < 1000, "auto-restore with mmap loaded $n_tokens_after_restore tokens into slot $slot_k");
+
 # Cleanup
 $cache->free_slot(0);
 $cache->free_slot(1);
@@ -182,9 +222,17 @@ $cache->free_slot($slot_a) if defined $slot_a;
 $cache->free_slot($slot_b) if defined $slot_b;
 $cache->free_slot($slot_c) if defined $slot_c;
 $cache->free_slot($slot_d) if defined $slot_d;
+$cache->free_slot($slot_e) if defined $slot_e;
+$cache->free_slot($slot_f) if defined $slot_f;
+$cache->free_slot($slot_g) if defined $slot_g;
+$cache->free_slot($slot_h) if defined $slot_h;
+$cache->free_slot($slot_i) if defined $slot_i;
+$cache->free_slot($slot_j) if defined $slot_j;
+$cache->free_slot($slot_k) if defined $slot_k;
 $cache->DESTROY;
 unlink $cache_file if -f $cache_file;
 unlink $mmap_cache_file if -f $mmap_cache_file;
+unlink $mmap_offset_file if -f $mmap_offset_file;
 rmdir $cache->{cache_dir} if -d $cache->{cache_dir};
 
 done_testing();
