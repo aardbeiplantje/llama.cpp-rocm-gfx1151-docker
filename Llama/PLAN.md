@@ -1,9 +1,9 @@
 # Implementation Plan
 
-## Status: ✅ COMPLETE — Core Engine + Multi-Model
+## Status: ✅ COMPLETE — Core Engine + Multi-Model + Dynamic Loading
 
 All core features implemented. 180 tests passing across 7 test files.
-Llama::Cache inference engine with multi-model support, slot management, chat completion, completion, embeddings, KV cache persistence, and preset file loading is fully functional.
+Llama::Cache inference engine with dynamic model loading, multi-model support, slot management, chat completion, completion, embeddings, KV cache persistence, and preset file loading is fully functional.
 
 ## Goal
 
@@ -542,32 +542,54 @@ sub get_embeddings {
 
 ## nginx Integration
 
-### nginx.conf changes
+### nginx.conf
 ```nginx
-# Keep existing proxy block (unchanged)
-location / {
-    access_by_lua_block { ... }
-    proxy_pass http://llama_backend;
+location /api/cache/health {
+    perl llama::cache_health;
 }
-
-# NEW: cache API endpoint
-location /api/cache {
-    perl llama::cache_handler;
+location /api/cache/models {
+    perl llama::cache_models;
 }
-
-# NEW: chat completions (full llama-server API surface)
+location /api/cache/slots {
+    perl llama::cache_slots;
+}
 location /api/cache/v1/chat/completions {
     perl llama::cache_chat;
 }
 location /api/cache/v1/completions {
-    perl llama::cache_completions;
+    perl llama::cache_completion;
 }
 location /api/cache/v1/embeddings {
     perl llama::cache_embeddings;
 }
+location /api/cache/v1/tokenize {
+    perl llama::cache_tokenize;
+}
+location /api/cache/v1/detokenize {
+    perl llama::cache_detokenize;
+}
+location /api/cache/metrics {
+    perl llama::cache_metrics;
+}
 ```
 
-### lib/perl/llama.pm — nginx Perl module (NOT a server)
+### Environment Variables
+```bash
+MODEL=/models/inference.gguf          # Default model path (backward compat)
+MODEL_PATH=/models:/shared/models     # Colon-separated search directories
+PRESET_FILE=/models/llamacpp_presets.ini  # Preset file path
+```
+
+### Dynamic Model Loading
+Models are loaded on-demand when first requested via the `model` field in the request body. The system searches `MODEL_PATH` directories for `${name}.gguf` or exact path matches.
+
+```perl
+# Request body triggers on-demand loading
+{ "model": "embedding", "messages": [...] }
+# Searches /models/embedding.gguf, /shared/models/embedding.gguf, etc.
+```
+
+### lib/perl/llama.pm — nginx Perl module
 
 nginx handles HTTP serving, forking, and connection management. This module only handles inference logic.
 
@@ -577,7 +599,9 @@ BEGIN {
     $ENV{LD_LIBRARY_PATH} = "/opt/rocm/lib:/llama/bin";
     use Llama::Cache;
     $CACHE = Llama::Cache->new(
-        model_path => $ENV{MODEL_PATH} || "/models/default.gguf",
+        model_path => $ENV{MODEL},
+        search_paths => [split /:/, $ENV{MODEL_PATH} || "/models"],
+        preset_file => $ENV{PRESET_FILE},
         n_ctx      => 4096,
         n_batch    => 512,
         n_threads  => 16,
@@ -594,8 +618,14 @@ sub cache_chat {
     my $rb = $r->request_body();
     my $req = decode_json($rb);
     my $slot_id = $req->{id_slot} // 0;
-    my $stream = $req->{stream} // 0;
+    my $model_name = $req->{model};
 
+    # Dynamic model loading
+    if ($model_name && !$CACHE->get_model_by_name($model_name)) {
+        $CACHE->load_model_by_name($model_name);
+    }
+
+    my $stream = $req->{stream} // 0;
     if ($stream) {
         return _stream_response($r, $slot_id, $req);
     } else {
@@ -605,41 +635,24 @@ sub cache_chat {
         return OK;
     }
 }
-
-sub cache_embeddings {
-    my ($r) = @_;
-    my $rb = $r->request_body();
-    my $req = decode_json($rb);
-    my $slot_id = $req->{id_slot} // 0;
-    my $emb = $CACHE->embeddings($slot_id, $req->{input});
-    my $result = {
-        object => "list",
-        data => [{ object => "embedding", index => 0, embedding => $emb }],
-        model => $model_name,
-        usage => { prompt_tokens => ..., total_tokens => ... },
-    };
-    $r->send_http_header("application/json");
-    $r->print(encode_json($result));
-    return OK;
-}
 ```
 
 ## llama-server API Surface Coverage
 
 | Method | Path | Status |
 |--------|------|--------|
-| GET | `/health`, `/v1/health` | Pending |
-| GET | `/metrics` | Pending |
+| GET | `/health`, `/v1/health` | ✅ Implemented |
+| GET | `/metrics` | ✅ Implemented |
 | GET | `/props` | Pending |
 | POST | `/props` | Pending |
-| GET | `/models`, `/v1/models` | Pending |
+| GET | `/models`, `/v1/models` | ✅ Implemented |
 | POST | `/completion`, `/completions`, `/v1/completions` | ✅ Implemented |
 | POST | `/chat/completions`, `/v1/chat/completions` | ✅ Implemented |
 | POST | `/v1/chat/completions/control` | Pending |
 | POST | `/v1/responses`, `/responses` | Pending |
 | POST | `/v1/embeddings` | ✅ Implemented |
 | POST | `/v1/rerank`, `/reranking` | Skip — not needed |
-| POST | `/tokenize`, `/detokenize`, `/apply-template` | Pending |
+| POST | `/tokenize`, `/detokenize`, `/apply-template` | tokenize/detokenize ✅ |
 | POST | `/chat/completions/input_tokens` | Pending |
 | GET | `/slots`, POST `/slots/:id_slot` | ✅ Implemented |
 | GET | `/v1/stream/:conv_id` | Pending (needs Stream class) |
@@ -648,14 +661,14 @@ sub cache_embeddings {
 | GET | `/lora-adapters`, POST `/lora-adapters` | Skip — not needed |
 
 **Priority order:**
-1. `/health`, `/v1/health` — trivial
-2. `/v1/models` — trivial
+1. `/health`, `/v1/health` — ✅ implemented
+2. `/v1/models` — ✅ implemented
 3. `/v1/chat/completions` — ✅ implemented
 4. `/v1/completions` — ✅ implemented
 5. `/slots`, `/slots/:id_slot` — ✅ implemented
 6. `/v1/stream/:conv_id`, `/v1/streams/lookup`, DELETE `/v1/stream/:conv_id` — pending
 7. `/v1/embeddings` — ✅ implemented
-8. `/tokenize`, `/detokenize`, `/apply-template` — pending
+8. `/tokenize`, `/detokenize` — ✅ implemented
 9. `/props` — pending
 
 ## Comparison: llama-server vs Llama::Cache
@@ -663,6 +676,7 @@ sub cache_embeddings {
 | Feature | llama-server | Llama::Cache |
 |---------|-------------|--------------|
 | Model loading | C++ llama_model_load_from_file | XS llama_model_load_from_file_mmap |
+| Multi-model | Process-per-model | In-process, dynamic loading |
 | Slot management | C++ state machine, task queue | Perl slot state tracking |
 | Streaming | C++ stream_session_manager | Perl Stream class + SSE |
 | Embeddings | C++ llama_get_embeddings | XS llama_get_embeddings |
@@ -671,12 +685,24 @@ sub cache_embeddings {
 | Memory | C++ allocation | Perl SV + XS buffers |
 | Binary size | ~100MB C++ binary | ~10MB Perl + XS |
 | Startup time | ~2s (C++ init) | ~0.5s (Perl + mmap) |
+| Preset support | INI file via libllama | INI file parsed in Perl |
+
+## Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `MODEL` | Default model path | `/models/default.gguf` |
+| `MODEL_PATH` | Colon-separated search directories for dynamic loading | `/models` |
+| `PRESET_FILE` | Preset INI file path | `/models/llamacpp_presets.ini` |
+| `MODELS_DIR` | Host path to mount as `/models` inside container | (required) |
+| `LLAMA_DOCKER_IMAGE` | Docker image tag | `local/ai/llama.cpp-gfx1151:latest` |
+| `LLAMA_PRESETS` | Path to presets file | `./llamacpp_presets.ini` |
+| `HF_HOME` | HuggingFace cache directory | (default) |
 
 ## Remaining Work
 
 1. ~~**nginx integration**~~ — ✅ added `/api/cache` location blocks to nginx.conf
 2. ~~**lib/perl/llama.pm**~~ — ✅ added cache handlers with dynamic model loading
-3. **Remaining llama-server endpoints** — health, tokenize, detokenize, props, streaming endpoints
+3. **Remaining llama-server endpoints** — `/props`, `/chat/completions/input_tokens`, streaming endpoints (`/v1/stream/:conv_id`, `/v1/streams/lookup`, DELETE `/v1/stream/:conv_id`)
 4. **Integration tests** — end-to-end with nginx
 5. **Proper sampler** — deferred: llama.cpp bug in `llama_sampler_sample` with top_k/top_p/temp samplers on Qwen3.5 ROCmFP4 model (`GGML_ASSERT(cur_p.selected >= 0 && cur_p.selected < (int32_t) cur_p.size)` fails in llama-sampler.cpp:866). Greedy sampling works and is used as stopgap.
-6. ~~**Multi-model preset testing**~~ — ✅ preset file loading tested with real model presets
