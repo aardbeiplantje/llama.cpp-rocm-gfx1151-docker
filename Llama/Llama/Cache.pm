@@ -45,6 +45,7 @@ sub new {
         eval { require File::Path; File::Path::make_path($cache_dir) };
     }
 
+    my $search_paths = $opts{search_paths} || [];
     my @models;
     my $total_slots = 0;
     my $slot_offset = 0;
@@ -148,16 +149,15 @@ sub new {
         };
 
         $total_slots = $n_slots;
-    } else {
-        die "Either 'models' (list) or 'model_path' required";
     }
 
     return bless {
-        models      => \@models,
-        cache_dir   => $cache_dir,
-        total_slots => $total_slots,
-        next_slot   => 0,
-        stats       => {
+        models       => \@models,
+        search_paths => $search_paths,
+        cache_dir    => $cache_dir,
+        total_slots  => $total_slots,
+        next_slot    => 0,
+        stats        => {
             tokens_total            => 0,
             prompt_tokens_total     => 0,
             completion_tokens_total => 0,
@@ -165,12 +165,86 @@ sub new {
     }, $class;
 }
 
+# ============================================================================
+# Dynamic model loading
+# ============================================================================
+
+sub load_model_by_name {
+    my ($self, $name) = @_;
+    return $self->get_model_by_name($name) if $self->get_model_by_name($name);
+
+    my $search_paths = $self->{search_paths};
+    my $model_path;
+
+    for my $dir (@$search_paths) {
+        next unless -d $dir;
+        my $gguf = "$dir/${name}.gguf";
+        if (-f $gguf) {
+            $model_path = $gguf;
+            last;
+        }
+        my $full_path = "$dir/$name";
+        if (-f $full_path) {
+            $model_path = $full_path;
+            last;
+        }
+    }
+
+    return undef unless $model_path;
+
+    my $preset_name = $name;
+    $preset_name =~ s/\.gguf$//i;
+
+    my $model = Llama::ModelConfig->new(
+        path        => $model_path,
+        preset_file => $self->{preset_file},
+        preset_name => $preset_name,
+    );
+
+    my $n_slots = $self->{default_n_slots} || 4;
+    my $model_name = $model->model_name || $model->path;
+
+    my @contexts;
+    for my $i (0 .. $n_slots - 1) {
+        my $ctx = Llama::Context->new(
+            $model->load_model,
+            n_ctx        => $model->n_ctx,
+            n_batch      => $model->n_batch,
+            n_threads    => $model->n_threads,
+            n_threads_batch => $model->n_threads_batch,
+            embeddings   => $model->embeddings,
+        );
+        push @contexts, {
+            context => $ctx,
+            state   => 'idle',
+            n_tokens => 0,
+            t_start => 0,
+            t_prompt => 0,
+            t_gen => 0,
+        };
+    }
+
+    my $slot_offset = $self->{total_slots};
+    push @{$self->{models}}, {
+        config      => $model,
+        contexts    => \@contexts,
+        n_slots     => $n_slots,
+        slot_offset => $slot_offset,
+        model_name  => $model_name,
+    };
+
+    $self->{total_slots} += $n_slots;
+
+    return $self->get_model_by_name($model_name);
+}
+
 sub get_model_by_name {
     my ($self, $name) = @_;
     for my $m (@{$self->{models}}) {
         return $m if $m->{model_name} eq $name;
     }
-    return $self->{models}[0];
+    return $self->{models}[0] if @{$self->{models}};
+    return undef;
 }
 
 sub get_model_by_slot {
@@ -266,12 +340,13 @@ sub reset_stats {
 
 sub model_desc {
     my ($self) = @_;
-    return $self->{models}[0]->{config}->model_name;
+    return $self->{models}[0]->{model_name};
 }
 
 sub model_n_ctx_train {
     my ($self) = @_;
     my $m = $self->{models}[0];
+    return undef unless $m;
     my $loaded = $m->{loaded_model} || do {
         $m->{loaded_model} = $m->{config}->load_model;
         $m->{loaded_model};
@@ -282,6 +357,7 @@ sub model_n_ctx_train {
 sub model_n_embd {
     my ($self) = @_;
     my $m = $self->{models}[0];
+    return undef unless $m;
     my $loaded = $m->{loaded_model} || do {
         $m->{loaded_model} = $m->{config}->load_model;
         $m->{loaded_model};
@@ -292,6 +368,7 @@ sub model_n_embd {
 sub model_n_params {
     my ($self) = @_;
     my $m = $self->{models}[0];
+    return undef unless $m;
     my $loaded = $m->{loaded_model} || do {
         $m->{loaded_model} = $m->{config}->load_model;
         $m->{loaded_model};
@@ -323,22 +400,6 @@ sub model_info {
 # ============================================================================
 # Tokenization helpers
 # ============================================================================
-
-sub _tokenize_messages {
-    my ($self, $messages) = @_;
-    my $slot = $self->{get_slot_model} // $self->{models}[0];
-    my $model = $self->{models}[0];
-    my $vocab = $model->{config}->load_model->vocab;
-    my @tokens;
-
-    for my $msg (@$messages) {
-        my $content = $msg->{content} // '';
-        my @toks = $vocab->tokenize($content);
-        push @tokens, @toks;
-    }
-
-    return \@tokens;
-}
 
 sub _build_prompt_batch {
     my ($self, $tokens) = @_;

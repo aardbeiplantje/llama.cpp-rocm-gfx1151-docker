@@ -17,47 +17,31 @@ BEGIN {
         print STDERR "[llama.pm] WARNING: Llama::Cache not available: $@";
     } else {
         my $preset_file = $ENV{PRESET_FILE} || "/models/llamacpp_presets.ini";
-        my $models_env = $ENV{MODELS};
-        my @models;
+        my $model_path = $ENV{MODEL};
+        my $search_paths_env = $ENV{MODEL_PATH};
+        my @search_paths;
 
-        if ($models_env) {
-            for my $model_spec (split /\|/, $models_env) {
-                my ($path, $name) = split /:/, $model_spec, 2;
-                next unless $path;
-                push @models, {
-                    path => $path,
-                    name => $name || ($path =~ s/\.gguf$//r),
-                    n_slots => 4,
-                };
-            }
-        } elsif (my $model_path = $ENV{MODEL_PATH} || "/models/default.gguf") {
-            push @models, {
-                path => $model_path,
-                name => ($model_path =~ s/\.gguf$//r),
-                n_slots => 4,
-            };
+        if ($search_paths_env) {
+            @search_paths = split /:/, $search_paths_env;
+        } elsif ($model_path) {
+            (my $dir = $model_path) =~ s/[^\/]+$//;
+            @search_paths = ($dir) if $dir;
+        } else {
+            @search_paths = ("/models");
         }
 
         eval {
-            if (@models) {
-                $CACHE = Llama::Cache->new(
-                    models    => \@models,
-                    preset_file => $preset_file,
-                    n_slots   => 4,
-                    cache_dir => "/dev/shm/llama_cache",
-                );
-                print STDERR "[llama.pm] Llama::Cache initialized with " . scalar(@models) . " model(s)\n";
-            } else {
-                $CACHE = Llama::Cache->new(
-                    model_path => $ENV{MODEL_PATH} || "/models/default.gguf",
-                    n_ctx      => 4096,
-                    n_batch    => 512,
-                    n_threads  => 16,
-                    n_slots    => 4,
-                    cache_dir  => "/dev/shm/llama_cache",
-                );
-                print STDERR "[llama.pm] Llama::Cache initialized with model_path=$ENV{MODEL_PATH}\n";
-            }
+            $CACHE = Llama::Cache->new(
+                model_path => $model_path,
+                search_paths => \@search_paths,
+                preset_file => $preset_file,
+                n_ctx      => 4096,
+                n_batch    => 512,
+                n_threads  => 16,
+                n_slots    => 4,
+                cache_dir  => "/dev/shm/llama_cache",
+            );
+            print STDERR "[llama.pm] Llama::Cache initialized, MODEL=$model_path, MODEL_PATH=$search_paths_env\n";
         };
         if ($@) {
             print STDERR "[llama.pm] ERROR initializing Llama::Cache: $@";
@@ -100,18 +84,14 @@ sub handle_req {
     print_error("[INFO] REQUEST $method, header X-LLamaCPP-Id-slot: ".( $slot_id//"<no id_slot>"));
     if(length($slot_id) and $slot_id =~ m/^\d+$/){
         eval {
-            #print_error("[debug] body: $rb, ".($rf//"<no file>"));
             my $req = JSON::XS::decode_json($rb);
             $_json //= JSON::XS->new->utf8->allow_blessed->allow_unknown->allow_nonref->convert_blessed->canonical;
-            #print_error("[debug] orig: ",$_json->encode($req));
             print_error("[INFO] REQUEST $method, header X-LLamaCPP-Id-slot: ".( $slot_id//"<no id_slot>").", model:$req->{model}");
 
             do_magic_fixes($r, $req, $slot_id);
 
             $rb = $_json->encode($req);
-            #print_error("[debug] new:  ",$rb);
 
-            # log modified request body with 5-min rotation
             eval {
                 my $log_dir = "/tmp/request-logs";
                 make_path($log_dir) unless -d $log_dir;
@@ -127,7 +107,6 @@ sub handle_req {
                 print $fh "[$timestamp] method=$method slot_id=" . ($slot_id // "none") . " model=$model $safe_rb\n";
                 close $fh;
 
-                # Update latest symlink to point to current 5-min file
                 my $link = "$log_dir/latest";
                 unlink $link if -e $link;
                 symlink($log_file, $link) or print_error("[WARN] cannot create symlink $link: $!");
@@ -149,21 +128,15 @@ sub handle_req {
 sub do_magic_fixes {
     my ($r, $llm_req, $slot_id) = @_;
 
-    # add id_slot, make it a number
     $llm_req->{id_slot} = 0+$slot_id;
 
-    # fix for qwen: first message ALWAYS a system, the rest NEVER a system
     $llm_req->{messages}[0]{role} = "system";
     $_->{role} = "user" for grep {$_->{role} eq "system"} ((@{$llm_req->{messages}})[1..$#{$llm_req->{messages}}]);
 
-    # parse the first message's content (if role==system) and split it into
-    # multiple in order to improve KV cache reuse. Note that the first message
-    # will always have role==system at the moment, see the qwen hack
     my $m = \$llm_req->{messages}[0]{content};
     my $model_env;
     if($$m =~ s/^(You are powered by the model named .*?\. The exact model ID is .*?\n)//gms){
         $model_env = $1;
-        # strip Today's date: from env
         $model_env =~ s/Today's date: .*?\n//ms;
     }
     my $project_env;
@@ -215,7 +188,7 @@ sub print_error {
 }
 
 # ============================================================================
-# Cache API handlers — route to Llama::Cache instead of llama-server
+# Cache API handlers
 # ============================================================================
 
 sub cache_chat {
@@ -226,7 +199,19 @@ sub cache_chat {
     my $req = JSON::XS::decode_json($rb);
     return _json_response($r, { error => "invalid JSON" }, 400) unless $req;
 
+    my $model_name = $req->{model};
     my $slot_id = _get_slot_id($r, $req);
+
+    if ($model_name && !$CACHE->get_model_by_name($model_name)) {
+        eval {
+            $CACHE->load_model_by_name($model_name);
+        };
+        if ($@) {
+            print_error "[cache] failed to load model $model_name: $@";
+            return _json_response($r, { error => "failed to load model: $@" }, 500);
+        }
+    }
+
     my $messages = $req->{messages};
     my $n_predict = $req->{n_predict} // 256;
     my $stream = $req->{stream} // 0;
@@ -255,7 +240,19 @@ sub cache_completion {
     my $req = JSON::XS::decode_json($rb);
     return _json_response($r, { error => "invalid JSON" }, 400) unless $req;
 
+    my $model_name = $req->{model};
     my $slot_id = _get_slot_id($r, $req);
+
+    if ($model_name && !$CACHE->get_model_by_name($model_name)) {
+        eval {
+            $CACHE->load_model_by_name($model_name);
+        };
+        if ($@) {
+            print_error "[cache] failed to load model $model_name: $@";
+            return _json_response($r, { error => "failed to load model: $@" }, 500);
+        }
+    }
+
     my $prompt = $req->{prompt} // "";
     my $n_predict = $req->{n_predict} // 256;
 
@@ -279,7 +276,19 @@ sub cache_embeddings {
     my $req = JSON::XS::decode_json($rb);
     return _json_response($r, { error => "invalid JSON" }, 400) unless $req;
 
+    my $model_name = $req->{model};
     my $slot_id = _get_slot_id($r, $req);
+
+    if ($model_name && !$CACHE->get_model_by_name($model_name)) {
+        eval {
+            $CACHE->load_model_by_name($model_name);
+        };
+        if ($@) {
+            print_error "[cache] failed to load model $model_name: $@";
+            return _json_response($r, { error => "failed to load model: $@" }, 500);
+        }
+    }
+
     my $input = $req->{input} // "";
 
     my $emb;
@@ -291,6 +300,9 @@ sub cache_embeddings {
         return _json_response($r, { error => $@ }, 500);
     }
 
+    my $model = $CACHE->get_model_by_slot($slot_id);
+    my $model_desc = $model ? $model->{model_name} : $CACHE->model_desc;
+
     my $result = {
         object => "list",
         data => [{
@@ -298,7 +310,7 @@ sub cache_embeddings {
             index => 0,
             embedding => $emb,
         }],
-        model => $CACHE->model_desc,
+        model => $model_desc,
         usage => {
             prompt_tokens => scalar @{$CACHE->{contexts}[$slot_id]{n_tokens} // 0},
             total_tokens => scalar @{$CACHE->{contexts}[$slot_id]{n_tokens} // 0},
@@ -354,7 +366,7 @@ sub cache_tokenize {
     return _json_response($r, { error => "invalid JSON" }, 400) unless $req;
 
     my $text = $req->{input} // "";
-    my $vocab = $CACHE->{model}->vocab;
+    my $vocab = $CACHE->get_model->config->load_model->vocab;
     my @tokens = $vocab->tokenize($text);
 
     return _json_response($r, { tokens => \@tokens, count => scalar @tokens });
@@ -371,7 +383,7 @@ sub cache_detokenize {
     my $tokens = $req->{tokens};
     return _json_response($r, { error => "tokens required" }, 400) unless $tokens;
 
-    my $vocab = $CACHE->{model}->vocab;
+    my $vocab = $CACHE->get_model->config->load_model->vocab;
     my @pieces;
     for my $tok (@$tokens) {
         push @pieces, $vocab->token_to_piece($tok);
@@ -441,13 +453,6 @@ sub _get_slot_id {
     return $req->{id_slot} // 0 + 0;
 }
 
-sub _get_model {
-    my ($r, $req) = @_;
-    my $model_name = $req->{model};
-    return $CACHE->get_model_by_name($model_name) if $model_name && $CACHE->get_model_by_name($model_name);
-    return $CACHE->get_model();
-}
-
 sub _json_response {
     my ($r, $data, $status) = @_;
     $status //= 200;
@@ -467,10 +472,19 @@ sub _stream_chat {
     my $stream = Llama::Cache::Stream->new($conv_id);
 
     my $slot = $CACHE->get_slot($slot_id);
-    my $ctx = $slot->{context};
-    my $vocab = $CACHE->{model}->vocab;
+    return _json_response($r, { error => "slot not found" }, 400) unless $slot;
 
-    my @tokens = @{$CACHE->_tokenize_messages($messages)};
+    my $ctx = $slot->{context};
+    my $model = $CACHE->get_model_by_slot($slot_id);
+    my $vocab = $model ? $model->{config}->load_model->vocab : $CACHE->get_model->config->load_model->vocab;
+
+    my @tokens;
+    for my $msg (@$messages) {
+        my $content = $msg->{content} // '';
+        my @toks = $vocab->tokenize($content);
+        push @tokens, @toks;
+    }
+
     my $batch = Llama::Batch->new(max_tokens => scalar @tokens);
     $batch->set_tokens(map { [@tokens[$_], $_, 0] } 0 .. $#tokens);
     $ctx->decode($batch);
@@ -520,7 +534,7 @@ sub _stream_chat {
             id      => $conv_id,
             object  => "chat.completion.chunk",
             created => time(),
-            model   => $CACHE->model_desc,
+            model   => $model ? $model->{model_name} : $CACHE->model_desc,
             choices => [{
                 index        => 0,
                 delta        => { content => $piece },
@@ -536,7 +550,7 @@ sub _stream_chat {
         id      => $conv_id,
         object  => "chat.completion.chunk",
         created => time(),
-        model   => $CACHE->model_desc,
+        model   => $model ? $model->{model_name} : $CACHE->model_desc,
         choices => [{
             index        => 0,
             delta        => {},
