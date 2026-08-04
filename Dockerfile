@@ -63,6 +63,7 @@ ARG W=rocmfp4-llama
 COPY --from=builder /llama-build/llama.cpp /llama.cpp
 COPY --from=builder /llama /llama
 COPY Llama /llama-perl/Llama
+ARG CACHEBUST=1
 ENV ROCM_PATH=/opt/rocm
 ENV LD_LIBRARY_PATH=${ROCM_PATH}/lib
 RUN \
