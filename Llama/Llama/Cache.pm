@@ -884,7 +884,7 @@ sub _restore_slot_cache {
             open my $fh2, '<:raw', $path or die "Cannot open $path: $!";
             my $prot = PROT_READ() || 1;
             my $map = MAP_SHARED() || 1;
-            my $_mmap_ok = mmap $data_mmap, $data_size, $prot, $map, $fh2, 8;
+            mmap $data_mmap, $data_size, $prot, $map, $fh2, 8 or die "mmap failed: $!";
             close $fh2;
             $data = $data_mmap;
         } else {
@@ -960,7 +960,7 @@ sub load_slot_from_mmap_file {
             open my $fh2, '<:raw', $file_path or die "Cannot open $file_path: $!";
             my $prot = PROT_READ() || 1;
             my $map = MAP_SHARED() || 1;
-            my $_mmap_ok = mmap $data_mmap, $data_size, $prot, $map, $fh2, 8;
+            mmap $data_mmap, $data_size, $prot, $map, $fh2, 8 or die "mmap failed: $!";
             close $fh2;
             $data = $data_mmap;
         } else {
