@@ -851,11 +851,31 @@ sub cache_chat {
 - **Workaround:** Greedy sampling used as stopgap
 - **Action:** Fix requires upstream llama.cpp patch
 
-### 3. Chat template support ✅ IMPLEMENTED
+### 3. Chat template support ✅ IMPLEMENTED — TWO APPROACHES
+
+#### A. Native llama_chat_apply_template via XS binding  
 - **XS binding**: `Llama::llama_chat_apply_template($tmpl_name_or_string, \@messages, $add_ass)` 
 - **Model method**: `$model->apply_chat_template(\@messages, $add_ass)` auto-detects model's built-in template
 - **Input format**: Arrayref of hashrefs with `{role => 'system|user|assistant', content => '...'}` keys
 - **Supported models**: Qwen, Nemotron, DeepSeekV4, Gemma — all models with GGUF chat templates
+- **Pros**: Zero dependencies on external libraries beyond llama.cpp; uses embedded GGUF metadata directly  
+
+#### B. Minijinja-cabi XS wrapper (alternative Jinja2-compatible approach)  
+- **Module name**: `Llama::Minijinja` — pure XS bindings to libminijinja_cabi.so (Rust-built C ABI library)  
+- **High-level API**:  
+```perl
+use Llama::Minijinja;
+my $mj = Llama::Minijinja->new();
+$mj->add_template(greeting => "Hello {{ name }}!");
+my $output = $mj->render(greeting => { name => "World" });
+
+# One-shot without registration:
+my $result = Llama::Minijinja::apply_from_string("Hi {{ user }}!", { user => "Alice" });
+```
+- **Features**: Full Jinja syntax support including loops/conditionals/filters via minijinja-rs engine  
+- **Build integration**: Requires Rust toolchain and cargo for building libminijinja_cabi.so; Dockerfile updates needed in builder stage  
+- **Use case**: When advanced template features required that native llama_chat_apply_template doesn't provide  
+
 
 ### 4. Performance benchmarking
 - **Status:** Not done
