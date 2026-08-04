@@ -2,6 +2,7 @@ package Llama::Model;
 
 use strict;
 use warnings;
+use Carp qw(croak);
 
 our $VERSION = '0.1.0';
 
@@ -57,6 +58,23 @@ sub chat_template {
     $name //= '';
     my $tmpl = Llama::llama_model_chat_template($self->{ptr}, $name);
     return $tmpl // '';
+}
+
+sub apply_chat_template {
+    my ($self, $messages, $add_ass) = @_;
+    croak("messages must be an array reference") unless ref($messages) eq 'ARRAY';
+    $add_ass //= 0;
+
+    # Validate message structure and extract template from model if not provided
+    for my $msg (@$messages) {
+        croak("each message must have 'role' and 'content' keys")
+            unless ref($msg) eq 'HASH' && exists($msg->{role}) && exists($msg->{content});
+    }
+
+    # Get default template name from model metadata (or use NULL for built-in detection)
+    my $template_name = undef;  # Let llama.cpp auto-detect based on model metadata
+
+    return Llama::llama_chat_apply_template($template_name, $messages, $add_ass);
 }
 
 sub vocab {

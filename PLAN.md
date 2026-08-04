@@ -106,7 +106,13 @@ void    llama_memory_seq_add(IV mem, IV seq_id, IV p0, IV p1, IV delta)
 void    llama_memory_seq_div(IV mem, IV seq_id, IV p0, IV p1, IV d)
 IV      llama_memory_seq_pos_min(IV mem, IV seq_id)
 IV      llama_memory_seq_pos_max(IV mem, IV seq_id)
-bool    llama_memory_can_shift(IV mem)
+IV      llama_memory_can_shift(IV mem)
+
+// Model chat template queries
+const char*   llama_model_chat_template(IV model, char* name)  // get built-in template by name or default
+
+// Chat template application
+SV*           llama_chat_apply_template(SV* tmpl_sv, SV* messages_av, bool add_ass)
 ```
 
 ### 2. Typemap Entries (typemap)
@@ -189,6 +195,27 @@ Llama::_get_logits_ptr($ctx_ptr)   # returns pointer to logits buffer
 Llama::_read_float($ptr, $i)       # reads float at index from logits buffer
 Llama::_get_embeddings_ptr($ctx_ptr)  # returns pointer to embeddings buffer
 ```
+
+#### Llama::Model — chat templates
+
+Get built-in template name:
+```perl
+my $tmpl = $model->chat_template();              # auto-detect default template
+my $qwen_tmpl = $model->chat_template('qwen');   # explicit template name
+```
+
+Apply template to messages:
+```perl
+my @messages = (
+    { role => 'system', content => 'You are a helpful assistant.' },
+    { role => 'user', content => 'Hello!' },
+);
+my $prompt = $model->apply_chat_template(\@messages, $add_ass);  # add_ass defaults to false
+# or with custom template string:
+my $custom_prompt = Llama::llama_chat_apply_template($custom_tmpl_str, \@messages, 1);
+```
+
+Supported models/templates: Qwen3.5/3.6, Nemotron, DeepSeekV4, Gemma — all GGUF models with embedded chat templates.
 
 #### Llama::ModelConfig — preset file parsing
 
@@ -309,6 +336,7 @@ my $cancelled = $stream->is_cancelled();
 |---|---|---|
 | `t/00-load.t` | 1 | Module loads |
 | `t/01-model-load.t` | 6 | Model loading, context creation, batch setup |
+| `t/chat-templates.t` | 12 | Chat template application: auto-detect from GGUF, role/content formatting, error handling |
 | `t/02-inference.t` | 11 | Tokenization, decode, logits, sampling |
 | `t/03-kv-cache.t` | 30 | State save/restore, session file I/O, per-sequence ops, KV cache manipulation |
 | `t/04-mmap-showcase.t` | 19 | Mmap model loading, cross-context state transfer, session roundtrip |
@@ -319,7 +347,7 @@ my $cancelled = $stream->is_cancelled();
 ### Test Results
 
 ```
-Files=8, Tests=186, wallclock secs
+Files=9, Tests=198, wallclock secs
 Result: PASS
 ```
 
@@ -344,6 +372,8 @@ Result: PASS
 17. ✅ **Conv_id slot reuse** — same conv_id returns same slot, different conv_id returns different slot
 18. ✅ **Model filtering** — alloc_slot filters by model name
 19. ✅ **Integration test** — nginx forked, 16 endpoints tested, 1000-word system message
+
+20. ✅ **Chat template application** — auto-detect from GGUF metadata, role/content formatting, error handling for invalid messages
 
 ## Design Decisions
 
@@ -821,10 +851,11 @@ sub cache_chat {
 - **Workaround:** Greedy sampling used as stopgap
 - **Action:** Fix requires upstream llama.cpp patch
 
-### 3. Chat template support
-- **Status:** Not implemented
-- **Missing:** `llama_chat_apply_template` not bound in XS
-- **Action:** Add XS binding for chat template application
+### 3. Chat template support ✅ IMPLEMENTED
+- **XS binding**: `Llama::llama_chat_apply_template($tmpl_name_or_string, \@messages, $add_ass)` 
+- **Model method**: `$model->apply_chat_template(\@messages, $add_ass)` auto-detects model's built-in template
+- **Input format**: Arrayref of hashrefs with `{role => 'system|user|assistant', content => '...'}` keys
+- **Supported models**: Qwen, Nemotron, DeepSeekV4, Gemma — all models with GGUF chat templates
 
 ### 4. Performance benchmarking
 - **Status:** Not done

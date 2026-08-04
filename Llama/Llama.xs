@@ -108,6 +108,78 @@ llama_model_chat_template(IV model, char* name)
     OUTPUT:
         RETVAL
 
+SV*
+llama_chat_apply_template(SV* tmpl_sv, SV* messages_sv, bool add_ass)
+    PREINIT:
+        const char *tmpl;
+        AV *messages_av;
+        int32_t n_msg;
+        struct llama_chat_message *chat_arr;
+        STRLEN len;
+        char *buf;
+        int32_t ret_len;
+        SV *result;
+    PPCODE:
+        /* Get template string */
+        if (SvOK(tmpl_sv)) {
+            tmpl = SvPV(tmpl_sv, len);
+        } else {
+            tmpl = NULL;  /* Use built-in default */
+        }
+
+        /* Parse messages array - expect ARRAYREF of HASHREFs with role/content keys */
+        if (!SvROK(messages_sv) || SvTYPE(SvRV(messages_sv)) != SVt_PVAV) {
+            croak("messages must be an array reference");
+        }
+        messages_av = (AV*)SvRV(messages_sv);
+        n_msg = av_len(messages_av) + 1;
+
+        /* Allocate C array for chat messages */
+        chat_arr = (struct llama_chat_message *)malloc(n_msg * sizeof(struct llama_chat_message));
+
+        /* Extract role and content from each message hashref */
+        for (int i = 0; i < n_msg; i++) {
+            SV **msg_ref = av_fetch(messages_av, i, 0);
+            if (!msg_ref || !SvROK(*msg_ref)) {
+                free(chat_arr);
+                croak("message %d is not a hash reference", i);
+            }
+
+            HV *msg_hv = (HV*)SvRV(*msg_ref);
+            SV **role_sv = hv_fetch(msg_hv, "role", 4, 0);
+            SV **content_sv = hv_fetch(msg_hv, "content", 7, 0);
+
+            if (!role_sv || !*role_sv || !content_sv || !*content_sv) {
+                free(chat_arr);
+                croak("message %d missing 'role' or 'content'", i);
+            }
+
+            chat_arr[i].role    = SvPV_nolen(*role_sv);
+            chat_arr[i].content = SvPV_nolen(*content_sv);
+        }
+
+        /* First call: get required buffer size */
+        ret_len = llama_chat_apply_template(tmpl, chat_arr, n_msg, add_ass, NULL, 0);
+        if (ret_len <= 0) {
+            free(chat_arr);
+            XSRETURN_EMPTY;
+        }
+
+        /* Allocate output string with extra space for null terminator */
+        result = newSV(ret_len + 1);
+        buf = SvPVX(result);
+
+        /* Second call: write formatted prompt to buffer */
+        ret_len = llama_chat_apply_template(tmpl, chat_arr, n_msg, add_ass, buf, ret_len + 1);
+
+        /* Clean up and return result */
+        free(chat_arr);
+        SvCUR_set(result, ret_len);
+        *SvEND(result) = '\0';
+
+        ST(0) = sv_2mortal(result);
+        XSRETURN(1);
+
 # ============================================================================
 # Context creation / destruction
 # ============================================================================
