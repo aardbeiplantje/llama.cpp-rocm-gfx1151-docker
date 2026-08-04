@@ -140,11 +140,11 @@ sub do_magic_fixes {
     my $model_env;
     if($$m =~ s/^(You are powered by the model named .*?\. The exact model ID is .*?\n)//gms){
         $model_env = $1;
-        $model_env =~ s/Today's date: .*?\n//ms;
     }
     my $project_env;
     if($$m =~ s/^(Here is some useful information about the environment you are running in:\n<env>.*?<\/env>)//gms){
         $project_env = $1;
+        $project_env =~ s/Today's date: .*?\n//ms;
     }
     my $mcp_instructions;
     if($$m =~ s/^(<mcp_instructions>.*?<\/mcp_instructions>)//gms){
