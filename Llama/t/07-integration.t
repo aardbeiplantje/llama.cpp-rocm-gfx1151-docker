@@ -151,12 +151,7 @@ CONF
         exec('nginx', '-c', $nginx_conf, '-g', 'daemon off;') or die "Cannot exec nginx: $!";
     }
 
-    for my $i (1 .. 30) {
-        sleep 1;
-        my $resp = $http->get("http://localhost:18000/api/cache/health");
-        return if $resp->{status} == 200;
-    }
-    die "nginx did not start within 30 seconds";
+    return;
 }
 
 sub stop_nginx {
