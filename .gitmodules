@@ -2,6 +2,7 @@
 	path = llama.cpp
 	url = git@github.com:aardbeiplantje/llama.cpp.git
 	branch = rocmfp4-strix
+	
 [submodule "minijinja"]
-	path = minijinja
-	url = https://github.com/mitsuhiko/minijinja.git
+	path = minijinja  
+	url = https://github.com/mitsuhiko/minijinja.git	
