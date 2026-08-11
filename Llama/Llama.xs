@@ -1,5 +1,9 @@
 #define PERL_NO_GET_CONTEXT
+#include "string.h"
 #include "llama.h"
+
+/* ggml_log_callback type definition */
+typedef void (*ggml_log_callback)(enum ggml_log_level level, const char * text, void * user_data);
 
 #include <EXTERN.h>
 #include <perl.h>
@@ -11,15 +15,35 @@ static STRLEN TLlama_text_len = 0;
 static llama_token* TLlama_loaded_tokens = NULL;
 static size_t TLlama_loaded_count = 0;
 
+/* No-op log callback for disabling logs */
+static void llama_log_noop(enum ggml_log_level level, const char * text, void * user_data) {
+    (void)level; (void)text; (void)user_data;
+}
+
 MODULE = Llama            PACKAGE = Llama
 
 # ============================================================================
-# Lifecycle
+# Lifecycle / Logging Control
 # ============================================================================
 
 void
 llama_backend_init()
     CODE:
+        /* Logging control via environment variable */
+        /* Default behavior: logging DISABLED (suppress all llama.cpp log output) */
+        /* Set LLAMA_LOG_ENABLE=1 or true to re-enable logging if needed */
+        const char *log_enable_env = PerlEnv_getenv("LLAMA_LOG_ENABLE");
+        int should_log = 0; /* default: disabled */
+        
+        if (log_enable_env && (strcmp(log_enable_env, "1") == 0 || strcmp(log_enable_env, "true") == 0)) {
+            should_log = 1; /* enabled by user request */
+        }
+        
+        if (should_log) {
+            llama_log_set(NULL, NULL); /* use default logger (outputs to stderr/stdout) */
+        } else {
+            llama_log_set((ggml_log_callback)llama_log_noop, NULL); /* suppress logs */
+        }
         llama_backend_init();
 
 void

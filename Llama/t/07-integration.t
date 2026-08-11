@@ -12,6 +12,15 @@ use Fcntl qw(:flock);
 BEGIN {
     $ENV{PERL5LIB} = '/workdir/llama.cpp.git/Llama/blib/lib:/workdir/llama.cpp.git/Llama/blib/arch' unless $ENV{PERL5LIB};
     unshift @INC, '/workdir/llama.cpp.git/Llama/blib/lib', '/workdir/llama.cpp.git/Llama/blib/arch';
+    
+    # Check if nginx is available - required for integration tests
+    my $nginx_path = `which nginx 2>/dev/null`;
+    chomp($nginx_path) if $nginx_path;
+    if (!defined $nginx_path || !-x $nginx_path) {
+        plan skip_all => "nginx not found or not executable - skipping integration tests";
+        exit 0;
+    }
+    
     eval { require Llama::Cache };
     if ($@) {
         plan skip_all => "Llama::Cache not loadable: $@";
