@@ -1,6 +1,7 @@
 use strict;
 use warnings;
 use ExtUtils::MakeMaker;
+use Config;
 
 my $rocm_path = $ENV{ROCM_PATH} || '/opt/rocm';
 my $llama_src = $ENV{LLAMA_SRC}
@@ -22,7 +23,15 @@ WriteMakefile(
         "-L$rocm_path/lib -lrocblas -lhipblas -lamdhip64",
     ],
     INC          => "-I$llama_src/include -I$llama_src/ggml/include -I$rocm_path/include",
-    DEFINE       => "-DVERSION=\$(VERSION) ",
+    LDDLFLAGS    => "-shared -Wl,--disable-new-dtags",
+    CCFLAGS      => "$Config{ccflags} -Wextra -Werror -fPIC -rdynamic",
+    DEFINE       => '-UXS_APIVERSION_BOOTCHECK -UXS_VERSION_BOOTCHECK',
     clean        => { FILES => 'Llama.so Llama.bs' },
+    NO_META      => 1,
+    PL_FILES     => {},
+    NO_MYMETA    => 1,
+    NO_PERLLOCAL => 1,
+    NO_PACKLIST  => 1,
+    NEEDS_LINKING=> 1,
     XSPROTOARG   => '-prototypes',
 );

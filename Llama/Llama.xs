@@ -678,7 +678,7 @@ IV
 llama_state_load_file_token(IV idx)
     CODE:
         int32_t i = (int32_t)idx;
-        if (!TLlama_loaded_tokens || i < 0 || i >= TLlama_loaded_count) {
+        if (!TLlama_loaded_tokens || i < 0 || (size_t)i >= TLlama_loaded_count) {
             RETVAL = -1;
         } else {
             RETVAL = (IV)TLlama_loaded_tokens[i];
@@ -786,7 +786,7 @@ IV
 llama_state_seq_load_file_token(IV idx)
     CODE:
         int32_t i = (int32_t)idx;
-        if (!TLlama_loaded_tokens || i < 0 || i >= TLlama_loaded_count) {
+        if (!TLlama_loaded_tokens || i < 0 || (size_t)i >= TLlama_loaded_count) {
             RETVAL = -1;
         } else {
             RETVAL = (IV)TLlama_loaded_tokens[i];

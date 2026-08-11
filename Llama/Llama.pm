@@ -11,8 +11,11 @@ use Llama::Context;
 use Llama::Batch;
 use Llama::Vocab;
 
-require XSLoader;
-XSLoader::load('Llama', $VERSION);
+sub dl_load_flags { 0x01 } # RTLD_LAZY
+
+require DynaLoader;
+our @ISA = qw(DynaLoader);
+__PACKAGE__->bootstrap($VERSION);
 
 # ROCm / Strix Halo environment setup
 sub setup_rocm_env {
