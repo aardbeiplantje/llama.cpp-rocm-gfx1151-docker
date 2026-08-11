@@ -1,4 +1,4 @@
-package Llama::Minijinja;
+package Minijinja;
 
 use strict;
 use warnings;
@@ -7,7 +7,7 @@ our $VERSION = "0.1.0";
 
 # High-level OO interface wrapping XS bindings to libminijinja_cabi.so
 
-# Create new environment instance
+# Create new environment instance  
 sub new {
     my ($class) = @_;
     my $env_handle = mj_env_new();
@@ -83,6 +83,6 @@ __END__
 
 =head1 NAME
 
-Llama::Minijinja - Perl XS bindings to minijinja-cabi Rust library  
+Minijinja - Perl XS bindings to minijinja-cabi Rust library  
 
 =cut
