@@ -18,7 +18,7 @@ WriteMakefile(
     LD           => $cc,
     OPTIMIZE     => '-O2 -std=c++17',
     LIBS         => [
-        "-L$llama_build/bin -lllama",
+        "-L$llama_build/bin -lllama -lggml-hip -lggml-base",
         "-L$rocm_path/lib -lrocblas -lhipblas -lamdhip64",
     ],
     INC          => "-I$llama_src/include -I$llama_src/ggml/include -I$rocm_path/include",
