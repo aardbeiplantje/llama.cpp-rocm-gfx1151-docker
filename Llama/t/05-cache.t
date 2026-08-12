@@ -76,11 +76,7 @@ ok(defined $slots->{3}, "slot 3 exists in slots");
 
 # Test 5: Chat completion (blocking)
 my $slot_id = 0;
-my $messages = [
-    { role => "user", content => "The quick brown fox" },
-];
-
-my $result = $cache->chat_completion($slot_id, $messages, 16);
+my $result = $cache->chat_completion($slot_id, [{role => "user", content => "The quick brown fox"}], 16);
 ok(defined $result, "chat_completion returned result");
 ok(defined $result->{id}, "result has id");
 ok(defined $result->{choices}, "result has choices");
@@ -143,15 +139,14 @@ ok($stats_after->{tokens_total} == 0, "stats reset to 0");
 
 # Test 14: Auto-save on free_slot
 my $slot_a = $cache->alloc_slot();
-my $messages = [{ role => "user", content => "Hello world test" }];
-$cache->chat_completion($slot_a, $messages, 8);
+$cache->chat_completion($slot_a,[{role => "user", content => "Hello world test"}], 8);
 my $n_tokens_before = $cache->get_slot($slot_a)->{n_tokens};
 ok($n_tokens_before > 0, "slot $slot_a has $n_tokens_before tokens before free");
 
-my $cache_file = $cache->_slot_cache_path($slot_a);
+my $cache_file_2 = $cache->_slot_cache_path($slot_a);
 $cache->free_slot($slot_a);
-ok(-f $cache_file, "auto-save created cache file at $cache_file");
-ok(-s $cache_file > 0, "auto-save cache file has content");
+ok(-f $cache_file_2, "auto-save created cache file at $cache_file_2");
+ok(-s $cache_file_2 > 0, "auto-save cache file has content");
 
 # Test 15: Auto-restore on alloc_slot (slot_a is now free)
 my $slot_b = $cache->alloc_slot();
