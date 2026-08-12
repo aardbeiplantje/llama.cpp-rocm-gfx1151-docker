@@ -1,16 +1,11 @@
 use strict;
 use warnings;
 
-$ENV{LD_LIBRARY_PATH} = '/opt/rocm/lib' unless $ENV{LD_LIBRARY_PATH};
-
 use Test::More;
 
 BEGIN {
     # Logging disabled by default - no environment variable needed
     delete $ENV{LLAMA_LOG_ENABLE};
-    
-    $ENV{PERL5LIB} = 'blib/lib:blib/arch' unless $ENV{PERL5LIB};
-    
     eval { require Llama };
     if ($@) {
         plan skip_all => "Llama XS module not loadable: $@";
@@ -28,8 +23,10 @@ eval {
 };
 ok(!$@, 'backend_init() succeeds with logs suppressed (default)');
 
+SKIP: {
+
 # Test 3: Model can be loaded without log output interfering
-my $model_path = '/workdir/llama.cpp.git/llama.cpp/build/bin/Qwen3.5-4B-ROCMFP4.gguf';
+my $model_path = $ENV{GGUF_MODEL} // 'Qwen3.5-4B-ROCMFP4.gguf';
 if (-f $model_path) {
     my $model_ptr;
     eval { 
@@ -43,7 +40,7 @@ if (-f $model_path) {
         Llama::llama_model_free($model_ptr);
     }
 } else {
-    skip "Test GGUF file not found at $model_path", 1;
+    skip "Test GGUF file not found at $model_path", 6;
 }
 
 Llama::backend_free();
@@ -79,7 +76,7 @@ my %default_states = (
     'false' => 0,    # explicit false -> disabled
 );
 
-for my $key (keys %default_states) {
+for my $key (sort keys %default_states) {
     my $expected = $default_states{$key};
     my $actual = (!defined($key) || $key eq '' || $key eq '0' || lc($key) eq 'false') ? 0 : 1;
     is($actual, $expected, "Default log state for undefined/empty/false is OFF");
@@ -89,3 +86,4 @@ for my $key (keys %default_states) {
 Llama::backend_free();
 
 done_testing();
+};

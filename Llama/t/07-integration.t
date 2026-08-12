@@ -1,8 +1,6 @@
 use strict;
 use warnings;
 
-$ENV{LD_LIBRARY_PATH} = '/opt/rocm/lib' unless $ENV{LD_LIBRARY_PATH};
-
 use Test::More;
 use File::Temp qw(tempdir);
 use HTTP::Tiny;
@@ -10,9 +8,6 @@ use JSON::PP;
 use Fcntl qw(:flock);
 
 BEGIN {
-    $ENV{PERL5LIB} = '/workdir/llama.cpp.git/Llama/blib/lib:/workdir/llama.cpp.git/Llama/blib/arch' unless $ENV{PERL5LIB};
-    unshift @INC, '/workdir/llama.cpp.git/Llama/blib/lib', '/workdir/llama.cpp.git/Llama/blib/arch';
-    
     # Check if nginx is available - required for integration tests
     my $nginx_path = `which nginx 2>/dev/null`;
     chomp($nginx_path) if $nginx_path;
@@ -20,7 +15,6 @@ BEGIN {
         plan skip_all => "nginx not found or not executable - skipping integration tests";
         exit 0;
     }
-    
     eval { require Llama::Cache };
     if ($@) {
         plan skip_all => "Llama::Cache not loadable: $@";
@@ -28,7 +22,7 @@ BEGIN {
     }
 }
 
-my $model_path = $ENV{GGUF_MODEL} // '/workdir/llama.cpp.git/llama.cpp/build/bin/Qwen3.5-4B-ROCMFP4.gguf';
+my $model_path = $ENV{GGUF_MODEL} // 'Qwen3.5-4B-ROCMFP4.gguf';
 my $cache_dir = tempdir('integration_cache_XXXXXX', CLEANUP => 0);
 my $nginx_conf = "$cache_dir/nginx.conf";
 my $nginx_pid_file = "$cache_dir/nginx.pid";
@@ -53,6 +47,7 @@ my $nginx_pid;
 my $http = HTTP::Tiny->new(timeout => 30);
 
 sub start_nginx {
+    my $perlpath = Cwd::cwd();
     my $conf = <<CONF;
 worker_processes 1;
 error_log $cache_dir/nginx_error.log;
@@ -73,7 +68,7 @@ http {
     access_log $cache_dir/nginx_access.log;
     error_log $cache_dir/nginx_error.log;
 
-    perl_modules $ENV{PERL5LIB};
+    perl_modules $perlpath;
     perl_require Llama.pm;
 
     server {
@@ -155,8 +150,8 @@ CONF
     die "Cannot fork: $!" unless defined $nginx_pid;
 
     if ($nginx_pid == 0) {
-        $ENV{MODEL} = $model_path;
-        $ENV{LD_LIBRARY_PATH} = '/opt/rocm/lib';
+        local $ENV{MODEL} = $model_path;
+        local $ENV{LD_LIBRARY_PATH} = '/opt/rocm/lib';
         exec('nginx', '-c', $nginx_conf, '-g', 'daemon off;') or die "Cannot exec nginx: $!";
     }
 

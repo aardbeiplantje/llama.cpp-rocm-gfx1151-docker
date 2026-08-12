@@ -1,17 +1,37 @@
 use Test::More;
 
-BEGIN { 
-    $ENV{PERL5LIB}='/workdir/llama.cpp.git/Llama/blib/lib'; 
-    $ENV{LD_LIBRARY_PATH}='/workdir/llama.cpp.git/llama.cpp/build/bin:/opt/rocm/lib';
-    eval { require Llama }; plan skip_all=>"XS not loadable: $@" if $@; 
-}  
+use Data::Dumper;
+
+use_ok("Llama");
 
 ok(defined &Llama::set_log_callback,"API function available");
 
-my @invoked; sub logger_cb { push @invoked, [@_]; }
+my @invoked;
+sub logger_cb {
+    push @invoked, @_;
+}
 
-eval { Llama::set_log_callback(\&logger_cb); ok(1,"Callback registered") or BAIL_OUT($@); }; 
+eval {
+    Llama::set_log_callback(\&logger_cb);
+}; 
+is($@, "", "no die set_log_callback(<sub>)");
 
-eval { Llama::backend_init(); ok(1,"Backend init works")}; is(scalar(@invoked), 0,"Binding verified even if callbacks dont fire in all llama codepaths");
+eval {
+    Llama::backend_init();
+};
+is($@, "", "no die backend_init()");
 
-Llama::backend_free(); done_testing();
+my $model_path = $ENV{GGUF_MODEL} // 'Qwen3.5-4B-ROCMFP4.gguf';
+my $model = 
+eval {
+    Llama::model_load($model_path);
+};
+is($@, "", "no die model_load($model_path)");
+
+eval {
+    Llama::backend_free();
+};
+is($@, "", "no die backend_free()");
+ok(scalar(@invoked) > 0, "log messages: >0 (545 currently)")
+    or print Dumper(\@invoked);
+done_testing();

@@ -4,7 +4,6 @@ use warnings;
 use Test::More;
 
 BEGIN {
-    $ENV{PERL5LIB} = 'blib/lib:blib/arch' unless $ENV{PERL5LIB};
     eval { require Llama; };
     if ($@) {
         plan skip_all => "Llama XS module not loadable: $@";
@@ -20,7 +19,7 @@ eval { Llama::backend_init(); };
 ok(!$@, 'backend init works');
 
 # Test 3: Load model
-my $model_path = $ENV{GGUF_MODEL} // '/workdir/llama.cpp.git/llama.cpp/build/bin/Qwen3.5-4B-ROCMFP4.gguf';
+my $model_path = $ENV{GGUF_MODEL} // 'Qwen3.5-4B-ROCMFP4.gguf';
 my $model;
 eval {
     $model = Llama::model_load($model_path);

@@ -4,7 +4,6 @@ use warnings;
 use Test::More;
 
 BEGIN {
-    $ENV{PERL5LIB} = 'blib/lib:blib/arch' unless $ENV{PERL5LIB};
     eval { require Llama::Cache::Stream; };
     if ($@) {
         plan skip_all => "Llama::Cache::Stream not loadable: $@";
