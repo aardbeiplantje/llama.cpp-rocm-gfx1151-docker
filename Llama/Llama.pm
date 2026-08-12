@@ -49,8 +49,8 @@ sub _get_embeddings_ptr {
 sub new {
     my ($class, $path, %opts) = @_;
     setup_rocm_env();
-    backend_init();
-    my $model = model_load($path);
+    Llama::backend_init();
+    my $model = Llama::model_load($path);
     return unless defined $model;
     my $ctx = Llama::Context->new(
         $model,
@@ -111,39 +111,10 @@ sub generate {
     return join('', @output);
 }
 
-sub top_k_sampler {
-    my ($class, $k) = @_;
-    $k //= 64;
-    return { ptr => Llama::llama_sampler_init_top_k($k) };
-}
-
-sub top_p_sampler {
-    my ($class, $p, $min_keep) = @_;
-    $p //= 0.8;
-    $min_keep //= 1;
-    return { ptr => Llama::llama_sampler_init_top_p($p, $min_keep) };
-}
-
-sub temp_sampler {
-    my ($class, $t) = @_;
-    $t //= 0.8;
-    return { ptr => Llama::llama_sampler_init_temp($t) };
-}
-
-sub dist_sampler {
-    my ($class, $seed) = @_;
-    $seed //= 42;
-    return { ptr => Llama::llama_sampler_init_dist($seed) };
-}
-
-sub greedy_sampler {
-    return { ptr => Llama::llama_sampler_init_greedy() };
-}
-
 sub sampler_chain {
     my ($class, @samplers) = @_;
     my $c = Llama::llama_sampler_chain_init();
-    Llama::llama_sampler_chain_add($c, $_->{ptr}) for @samplers;
+    Llama::llama_sampler_chain_add($c, $_) for @samplers;
     return $c;
 }
 

@@ -607,35 +607,35 @@ L_llama_vocab_nl(IV vocab)
 # ============================================================================
 
 IV
-L_llama_sampler_init_greedy()
+L_greedy_sampler()
     CODE:
         RETVAL = (IV)llama_sampler_init_greedy();
     OUTPUT:
         RETVAL
 
 IV
-L_llama_sampler_init_top_k(IV k)
+L_sampler_init_top_k(IV k)
     CODE:
         RETVAL = (IV)llama_sampler_init_top_k((int32_t)k);
     OUTPUT:
         RETVAL
 
 IV
-L_llama_sampler_init_top_p(NV p, IV min_keep)
+L_sampler_init_top_p(NV p, IV min_keep)
     CODE:
         RETVAL = (IV)llama_sampler_init_top_p((float)p, (size_t)min_keep);
     OUTPUT:
         RETVAL
 
 IV
-L_llama_sampler_init_temp(NV t)
+L_sampler_init_temp(NV t)
     CODE:
         RETVAL = (IV)llama_sampler_init_temp((float)t);
     OUTPUT:
         RETVAL
 
 IV
-L_llama_sampler_init_dist(IV seed)
+L_dist_sampler(IV seed)
     CODE:
         RETVAL = (IV)llama_sampler_init_dist((uint32_t)seed);
     OUTPUT:

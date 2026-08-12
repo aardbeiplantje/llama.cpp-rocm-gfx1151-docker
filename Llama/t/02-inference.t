@@ -65,6 +65,6 @@ ok(length($piece) > 0, "token_to_piece returned non-empty string: '$piece'");
 # Test 10: Test greedy sampler
 my $greedy = Llama::greedy_sampler();
 ok(defined $greedy, 'greedy sampler created');
-Llama::llama_sampler_free($greedy->{ptr});
+Llama::llama_sampler_free($greedy);
 
 done_testing();

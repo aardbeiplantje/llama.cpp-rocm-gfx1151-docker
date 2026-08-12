@@ -1,10 +1,6 @@
 package Llama::Context;
 
-use strict;
-use warnings;
-use Carp qw(croak);
-
-our $VERSION = '0.1.0';
+use strict; use warnings;
 
 sub new {
     my ($class, $model, %opts) = @_;
@@ -91,12 +87,11 @@ sub get_embeddings {
 
 sub default_sampler {
     my ($self) = @_;
-    my $chain = Llama::sampler_chain(
-        Llama::top_k_sampler(64),
-        Llama::top_p_sampler(0.8),
-        Llama::temp_sampler(0.8),
+    return Llama::sampler_chain(
+        Llama::sampler_init_top_k(64),
+        Llama::sampler_init_top_p(0.8),
+        Llama::sampler_init_temp(0.8),
     );
-    return $chain;
 }
 
 sub perf_tkvll {
@@ -146,7 +141,7 @@ sub load_session {
     my ($self, $path, $capacity) = @_;
     $capacity ||= 8192;
     my $success = Llama::llama_state_load_file($self->{ptr}, $path, $capacity);
-    croak "load_session failed for $path" unless $success;
+    return unless $success;
     my $count = Llama::llama_state_load_file_count();
     my @tokens;
     for my $i (0 .. $count - 1) {
@@ -184,7 +179,7 @@ sub seq_load_session {
     my ($self, $path, $seq_id, $capacity) = @_;
     $capacity ||= 8192;
     my $bytes = Llama::llama_state_seq_load_file($self->{ptr}, $path, $seq_id, $capacity);
-    croak "seq_load_session failed for $path" unless $bytes > 0;
+    return unless $bytes > 0;
     my $count = Llama::llama_state_seq_load_file_count();
     my @tokens;
     for my $i (0 .. $count - 1) {

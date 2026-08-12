@@ -19,7 +19,7 @@ isa_ok($mock_model, 'Llama::Model', 'Llama::Model object');
 # Test 3: Sampler constructors exist
 eval {
     my $greedy = Llama::greedy_sampler();
-    Llama::llama_sampler_free($greedy->{ptr});
+    Llama::llama_sampler_free($greedy);
 };
 ok(!$@, 'greedy_sampler works');
 
