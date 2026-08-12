@@ -8,7 +8,7 @@ our $VERSION = '0.1.0';
 
 sub new {
     my ($class, $ptr) = @_;
-    return bless { ptr => $ptr, freed => 0 }, $class;
+    return bless { ptr => $ptr }, $class;
 }
 
 sub ptr {
@@ -85,10 +85,11 @@ sub vocab {
 
 sub DESTROY {
     my ($self) = @_;
-    if ($self && !$self->{freed}) {
-        Llama::llama_model_free($self->{ptr});
-        $self->{freed} = 1;
-    }
+    return unless $self;
+    return unless exists $self->{ptr};
+    my $ptr = delete $self->{ptr};
+    Llama::llama_model_free($ptr);
+    return;
 }
 
 1;

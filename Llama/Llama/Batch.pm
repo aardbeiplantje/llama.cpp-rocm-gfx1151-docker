@@ -14,7 +14,6 @@ sub new {
     return bless {
         ptr        => $ptr,
         max_tokens => $max_tokens,
-        freed      => 0,
     }, $class;
 }
 
@@ -45,10 +44,11 @@ sub set_tokens {
 
 sub DESTROY {
     my ($self) = @_;
-    if ($self && !$self->{freed}) {
-        Llama::llama_batch_free($self->{ptr});
-        $self->{freed} = 1;
-    }
+    return unless $self;
+    return unless exists $self->{ptr};
+    my $ptr = delete $self->{ptr};
+    Llama::llama_batch_free($ptr);
+    return;
 }
 
 1;

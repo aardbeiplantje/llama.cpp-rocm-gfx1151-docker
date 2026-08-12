@@ -8,7 +8,7 @@ our $VERSION = '0.1.0';
 
 sub new {
     my ($class, $ptr) = @_;
-    return bless { ptr => $ptr, freed => 0 }, $class;
+    return bless { ptr => $ptr }, $class;
 }
 
 sub ptr {
@@ -74,11 +74,6 @@ sub detokenize {
         $n = -$n;
     }
     return substr($buf, 0, $n);
-}
-
-sub DESTROY {
-    my ($self) = @_;
-    # vocab is owned by model, do not free
 }
 
 1;

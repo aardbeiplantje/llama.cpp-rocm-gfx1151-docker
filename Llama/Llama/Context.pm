@@ -20,7 +20,6 @@ sub new {
     return bless {
         ptr         => $ptr,
         model       => $model,
-        freed       => 0,
         samplers    => [],
         n_ctx       => $opts{n_ctx} || 2048,
         n_batch     => $opts{n_batch} || 512,
@@ -289,9 +288,9 @@ sub can_shift {
 sub DESTROY {
     my ($self) = @_;
     return unless $self;
-    return unless exists $self->{freed};
-    Llama::llama_free($self->{ptr});
-    delete $self->{freed};
+    return unless exists $self->{ptr};
+    my $ptr = delete $self->{ptr};
+    Llama::llama_free($ptr);
     return;
 }
 
