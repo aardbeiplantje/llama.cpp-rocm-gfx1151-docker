@@ -85,15 +85,6 @@ sub get_embeddings {
     return \@emb;
 }
 
-sub default_sampler {
-    my ($self) = @_;
-    return Llama::sampler_chain(
-        Llama::sampler_init_top_k(64),
-        Llama::sampler_init_top_p(0.8),
-        Llama::sampler_init_temp(0.8),
-    );
-}
-
 sub perf_tkvll {
     my ($self) = @_;
     return Llama::llama_perf_context_tkvll($self->{ptr});

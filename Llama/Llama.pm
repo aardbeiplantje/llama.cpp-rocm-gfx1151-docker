@@ -56,23 +56,23 @@ sub generate {
     my $vocab = $self->{model}->vocab();
     my $ctx   = $self->{context};
 
+    $sampler_chain //= default_sampler();
+
     my @tokens = $vocab->tokenize($prompt);
     push @tokens, 1; # BOS if not already included
 
-    my $batch = Llama::Batch->new(max_tokens => scalar @tokens);
-    for my $i (0 .. $#tokens) {
-        $batch->set_token($i, $tokens[$i], $i, 0);
+    {
+        my $batch = Llama::Batch->new(max_tokens => scalar @tokens);
+        $batch->set_tokens(@tokens);
+        $ctx->decode($batch);
     }
 
-    $ctx->decode($batch);
-
-    my @output;
+    my $output = "";
     my $n_ctx = $ctx->n_ctx();
 
     for my $i (0 .. $n_predict - 1) {
         my $n_tokens = scalar @tokens;
         if ($n_tokens >= $n_ctx) {
-            warn "context full at $n_tokens tokens, stopping";
             last;
         }
 
@@ -85,15 +85,13 @@ sub generate {
             $ctx->decode($b);
         }
 
-        my $sampler = $sampler_chain || $ctx->default_sampler;
-        my $new_tok = Llama::llama_sampler_sample($sampler->{ptr}, $ctx->{ptr}, 0);
+        my $new_tok = Llama::llama_sampler_sample($sampler_chain, $ctx->{ptr}, 0);
         push @tokens, $new_tok;
 
-        my $piece = $vocab->token_to_piece($new_tok);
-        push @output, $piece;
+        $output .= $vocab->token_to_piece($new_tok);
     }
 
-    return join('', @output);
+    return $output;
 }
 
 sub sampler_chain {
@@ -101,6 +99,15 @@ sub sampler_chain {
     my $c = Llama::llama_sampler_chain_init();
     Llama::llama_sampler_chain_add($c, $_) for @samplers;
     return $c;
+}
+
+sub default_sampler {
+    my ($self) = @_;
+    return Llama::sampler_chain(
+        Llama::sampler_init_top_k(64),
+        Llama::sampler_init_top_p(0.8),
+        Llama::sampler_init_temp(0.8),
+    );
 }
 
 sub DESTROY {
