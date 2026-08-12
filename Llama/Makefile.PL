@@ -34,4 +34,17 @@ WriteMakefile(
     NO_PACKLIST  => 1,
     NEEDS_LINKING=> 1,
     XSPROTOARG   => '-prototypes',
+    macro        => {
+        PERL_DL_NONLAZY => 0,
+    },
 );
+
+# Override the ExtUtils::MM_Unix package method responsible for tests
+package MY;
+sub test_via_harness {
+    my ($self, $perl, $tests) = @_;
+    my $result = $self->SUPER::test_via_harness($perl, $tests);
+    # Replace the default NONLAZY=1 flag with NONLAZY=0 in the command string
+    $result =~ s/PERL_DL_NONLAZY=1/PERL_DL_NONLAZY=0/g;
+    return $result;
+}
