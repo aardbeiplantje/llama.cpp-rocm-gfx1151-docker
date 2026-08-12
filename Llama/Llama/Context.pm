@@ -65,7 +65,7 @@ sub get_logits {
     my $logits_ptr = Llama::_get_logits_ptr($self->{ptr});
     my @logits;
     for my $i (0 .. $n_vocab - 1) {
-        $logits[$i] = Llama::_read_float($logits_ptr, $i);
+        $logits[$i] = Llama::llama_get_logits_ith($logits_ptr, $i);
     }
     return \@logits;
 }
@@ -80,7 +80,7 @@ sub get_embeddings {
     my $n_embd = $self->{model}->n_embd;
     my @emb;
     for my $i (0 .. $n_embd - 1) {
-        $emb[$i] = Llama::_read_float(Llama::_get_embeddings_ptr($self->{ptr}), $i);
+        $emb[$i] = Llama::llama_get_logits_ith($self->{ptr}, $i);
     }
     return \@emb;
 }

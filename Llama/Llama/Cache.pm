@@ -549,10 +549,10 @@ sub chat_completion {
         $ctx->decode($ba);
         undef $ba;
 
-        my $logit_ptr = Llama::_get_logits_ptr($ctx->{ptr});
+        my $logit_ptr = $ctx->{ptr};
         my @logits;
         for my $j (0 .. $vocab->n_tokens - 1) {
-            $logits[$j] = Llama::_read_float($logit_ptr, $j);
+            $logits[$j] = Llama::llama_get_logits_ith($logit_ptr, $j);
         }
 
         my $max_logit = $logits[0];
@@ -676,10 +676,10 @@ sub completion {
         $ctx->decode($ba);
         undef $ba;
 
-        my $logit_ptr = Llama::_get_logits_ptr($ctx->{ptr});
+        my $logit_ptr = $ctx->{ptr};
         my @logits;
         for my $j (0 .. $vocab->n_tokens - 1) {
-            $logits[$j] = Llama::_read_float($logit_ptr, $j);
+            $logits[$j] = Llama::llama_get_logits_ith($logit_ptr, $j);
         }
 
         my $max_logit = $logits[0];

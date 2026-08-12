@@ -31,21 +31,6 @@ sub setup_rocm_env {
     return;
 }
 
-sub _get_logits_ptr {
-    my ($ptr) = @_;
-    return $ptr;
-}
-
-sub _read_float {
-    my ($ptr, $i) = @_;
-    return Llama::llama_get_logits_ith($ptr, $i);
-}
-
-sub _get_embeddings_ptr {
-    my ($ptr) = @_;
-    return $ptr;
-}
-
 sub new {
     my ($class, $path, %opts) = @_;
     setup_rocm_env();
