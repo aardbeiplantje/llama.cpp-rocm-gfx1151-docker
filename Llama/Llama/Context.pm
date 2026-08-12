@@ -8,6 +8,7 @@ our $VERSION = '0.1.0';
 
 sub new {
     my ($class, $model, %opts) = @_;
+    return unless defined $model;
     my $ptr = Llama::llama_init_from_model(
         $model->{ptr},
         $opts{n_ctx}        || 2048,

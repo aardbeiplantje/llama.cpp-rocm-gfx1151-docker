@@ -248,6 +248,7 @@ sub get_model_by_name {
 
 sub get_model_by_slot {
     my ($self, $slot_id) = @_;
+    return unless defined $slot_id;
     for my $m (@{$self->{models}}) {
         if ($slot_id >= $m->{slot_offset} && $slot_id < $m->{slot_offset} + $m->{n_slots}) {
             return $m;
@@ -258,6 +259,7 @@ sub get_model_by_slot {
 
 sub get_slot {
     my ($self, $slot_id) = @_;
+    return unless defined $slot_id;
     for my $m (@{$self->{models}}) {
         if ($slot_id >= $m->{slot_offset} && $slot_id < $m->{slot_offset} + $m->{n_slots}) {
             my $local = $slot_id - $m->{slot_offset};
@@ -881,10 +883,12 @@ sub _restore_slot_cache {
         my $data;
         if ($HAVE_MMAP && $data_size > 0) {
             my $data_mmap;
-            open my $fh2, '<:raw', $path or die "Cannot open $path: $!";
+            open(my $fh2, '<:raw', $path)
+                or die "Cannot open $path: $!\n";
             my $prot = PROT_READ() || 1;
             my $map = MAP_SHARED() || 1;
-            mmap $data_mmap, $data_size, $prot, $map, $fh2, 8 or die "mmap failed: $!";
+            mmap($data_mmap, $data_size, $prot, $map, $fh2, 8)
+                or die "mmap failed on $path: $!\n";
             close $fh2;
             $data = $data_mmap;
         } else {
@@ -957,10 +961,12 @@ sub load_slot_from_mmap_file {
         my $data;
         if ($HAVE_MMAP && $data_size > 0) {
             my $data_mmap;
-            open my $fh2, '<:raw', $file_path or die "Cannot open $file_path: $!";
+            open my $fh2, '<:raw', $file_path
+                or die "Cannot open $file_path: $!\n";
             my $prot = PROT_READ() || 1;
             my $map = MAP_SHARED() || 1;
-            mmap $data_mmap, $data_size, $prot, $map, $fh2, 8 or die "mmap failed: $!";
+            mmap($data_mmap, $data_size, $prot, $map, $fh2, 8)
+                or die "mmap failed for $file_path: $!\n";
             close $fh2;
             $data = $data_mmap;
         } else {

@@ -39,12 +39,14 @@ sub backend_free {
 sub model_load {
     my $path = shift;
     my $ptr = Llama::llama_model_load_from_file($path);
+    return unless defined $ptr;
     return Llama::Model->new($ptr);
 }
 
 sub model_load_mmap {
     my $path = shift;
     my $ptr = Llama::llama_model_load_from_file_mmap($path);
+    return unless defined $ptr;
     return Llama::Model->new($ptr);
 }
 
