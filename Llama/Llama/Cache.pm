@@ -34,7 +34,7 @@ sub new {
         $ENV{_LLAMA_ENV_SETUP} = 1;
     }
 
-    Llama::llama_backend_init();
+    Llama::backend_init();
 
     my $cache_dir = $opts{cache_dir} || "/dev/shm/llama_cache";
     unless (-d $cache_dir) {
@@ -1017,7 +1017,7 @@ sub DESTROY {
     for my $m (@{$self->{models}//[]}) {
         delete $_->{context} for @{$m->{contexts}//[]};
     }
-    Llama::llama_backend_free();
+    Llama::backend_free();
     return;
 }
 

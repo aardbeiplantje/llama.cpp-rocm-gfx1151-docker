@@ -1,6 +1,6 @@
 use strict; use warnings;
 
-use Test::More tests => 8;
+use Test::More tests => 9;
 
 use FindBin;
 use lib "$FindBin::Bin/..";
@@ -22,9 +22,10 @@ my $model_path = $ENV{GGUF_MODEL} // 'Qwen3.5-4B-ROCMFP4.gguf';
 if (-f $model_path) {
     my $m;
     eval { 
-        $m = Llama::llama_model_load_from_file($model_path); 
+        $m = Llama::model_load($model_path); 
     };
-    ok($@ eq '' && defined $m, 'Model loads successfully with default (suppressed) logging');
+    is($@, "", "no die");
+    ok(defined $m, 'Model loads successfully with default (suppressed) logging');
 
     # Clean up model pointer for next test
     print "# FREE $m\n";
@@ -36,16 +37,16 @@ if (-f $model_path) {
     skip "Test GGUF file not found at $model_path", 6;
 }
 
-Llama::backend_free();
-
-# Test 4: Verify llama_log_set XS binding exists and compiles correctly
-ok(defined &Llama::llama_backend_init, 'llama_backend_init function available');
+eval {
+    Llama::backend_free();
+};
+is($@, "", "free ok");
 
 # Test 5: llama_log_noop callback is linked properly by verifying backend init completes  
 eval { 
     Llama::backend_init(); 
 };
-ok(!$@, 'No-op log callback initialized without errors');
+is($@, "", "no die as init again");
 
 # Test 6: Environment variable mechanism works - verify we can set LLAMA_LOG_ENABLE
 $ENV{LLAMA_LOG_ENABLE} = '';

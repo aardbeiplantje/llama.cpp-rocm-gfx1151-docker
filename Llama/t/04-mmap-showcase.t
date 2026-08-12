@@ -19,7 +19,7 @@ ok(!$@, 'backend init works');
 my $model_path = $ENV{GGUF_MODEL} // 'Qwen3.5-4B-ROCMFP4.gguf';
 my $model;
 eval {
-    $model = Llama::model_load_mmap($model_path);
+    $model = Llama::model_load($model_path);
 };
 if ($@) {
     ok(0, "model_load_mmap: $@");
@@ -41,8 +41,6 @@ eval {
 };
 if ($@) {
     ok(0, "context init: $@");
-    $model->DESTROY;
-    Llama::backend_free();
     plan skip_all => "Could not create context";
     exit 0;
 }

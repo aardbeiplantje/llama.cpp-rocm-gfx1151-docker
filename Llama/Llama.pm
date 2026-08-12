@@ -31,22 +31,6 @@ sub setup_rocm_env {
     return;
 }
 
-sub backend_init {
-    return Llama::llama_backend_init();
-}
-
-sub backend_free {
-    return Llama::llama_backend_free();
-}
-
-sub model_load {
-    return Llama::llama_model_load_from_file(@_);
-}
-
-sub model_load_mmap {
-    return Llama::llama_model_load_from_file(@_);
-}
-
 sub _get_logits_ptr {
     my ($ptr) = @_;
     return $ptr;

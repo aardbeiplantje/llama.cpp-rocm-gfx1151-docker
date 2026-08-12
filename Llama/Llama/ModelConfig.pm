@@ -225,7 +225,7 @@ sub embeddings {
 
 sub load_model {
     my ($self) = @_;
-    return Llama::model_load_mmap($self->{path});
+    return Llama::model_load($self->{path});
 }
 
 sub apply_to_context_opts {

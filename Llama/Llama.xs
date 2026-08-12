@@ -89,7 +89,7 @@ L_set_log_callback(SV *cb, ...)
         log_cb_sv = svcb;
 
 void
-L_llama_backend_init()
+L_backend_init()
     PPCODE:
         dTHX;
         dSP;
@@ -118,7 +118,7 @@ L_llama_backend_init()
         llama_backend_init();
 
 void
-L_llama_backend_free()
+L_backend_free()
     CODE:
         /* Clean up stored callbacks on backend shutdown */
         if (log_cb_sv){
@@ -132,7 +132,7 @@ L_llama_backend_free()
 # ============================================================================
 
 void
-L_llama_model_load_from_file(SV *file=&PL_sv_undef)
+L_model_load(SV *file=&PL_sv_undef)
     PPCODE:
         dTHX;
         dSP;
