@@ -1,7 +1,11 @@
-use strict;
-use warnings;
+use strict; use warnings;
 
-use Test::More;
+use Test::More tests => 6;
+
+use FindBin;
+use lib "$FindBin::Bin/..";
+use lib "$FindBin::Bin/../blib/arch";
+
 use File::Temp qw(tempdir);
 use HTTP::Tiny;
 use JSON::PP;
@@ -23,7 +27,7 @@ BEGIN {
 }
 
 my $model_path = $ENV{GGUF_MODEL} // 'Qwen3.5-4B-ROCMFP4.gguf';
-my $cache_dir = tempdir('integration_cache_XXXXXX', CLEANUP => 0);
+my $cache_dir = tempdir('integration_cache_XXXXXX', CLEANUP => 0, DIR => "/tmp");
 my $nginx_conf = "$cache_dir/nginx.conf";
 my $nginx_pid_file = "$cache_dir/nginx.pid";
 my $socket_path = "$cache_dir/llama.sock";
@@ -47,7 +51,10 @@ my $nginx_pid;
 my $http = HTTP::Tiny->new(timeout => 30);
 
 sub start_nginx {
-    my $perlpath = Cwd::cwd();
+    my $perlpath1 = "$FindBin::Bin/../blib/arch";
+    my $perlpath2 = "$FindBin::Bin/../";
+    print "# using path $perlpath1 $perlpath2\n";
+    print "# using dir $cache_dir\n";
     my $conf = <<CONF;
 worker_processes 1;
 error_log $cache_dir/nginx_error.log;
@@ -68,7 +75,8 @@ http {
     access_log $cache_dir/nginx_access.log;
     error_log $cache_dir/nginx_error.log;
 
-    perl_modules $perlpath;
+    perl_modules $perlpath1;
+    perl_modules $perlpath2;
     perl_require Llama.pm;
 
     server {
@@ -142,20 +150,23 @@ http {
 }
 CONF
 
-    open my $cfh, '>', $nginx_conf or die "Cannot write nginx conf: $!";
-    print $cfh $conf;
-    close $cfh;
+    print "# write $nginx_conf\n";
+    open(my $cfh, '>', $nginx_conf)
+        or die "Cannot write nginx conf ($nginx_conf): $!\n";
+    print {$cfh} $conf;
+    close($cfh)
+        or die "Error close $nginx_conf: $!\n";
 
     $nginx_pid = fork();
     die "Cannot fork: $!" unless defined $nginx_pid;
-
     if ($nginx_pid == 0) {
         local $ENV{MODEL} = $model_path;
         local $ENV{LD_LIBRARY_PATH} = '/opt/rocm/lib';
-        exec('nginx', '-c', $nginx_conf, '-g', 'daemon off;') or die "Cannot exec nginx: $!";
+        exec('nginx', '-c', $nginx_conf, '-g', 'daemon off;')
+            or die "Cannot exec nginx: $!";
     }
 
-    return;
+    return $nginx_pid;
 }
 
 sub stop_nginx {
@@ -168,7 +179,10 @@ sub stop_nginx {
 sub json_post {
     my ($path, $body) = @_;
     my $json = JSON::PP->new->utf8->canonical;
-    my $body_str = $json->encode($body);
+    my $body_str = eval {$json->encode($body)};
+    if($@){
+        return
+    }
     my $resp = $http->post("http://localhost:18000$path", {
         content => $body_str,
         headers => { 'Content-Type' => 'application/json' },
@@ -347,10 +361,12 @@ ok(scalar @{$input_tok->{tokens}} > 0, 'input_tokens returned tokens');
 ok($input_tok->{count} > 0, 'input_tokens returned count');
 
 # Cleanup
-stop_nginx();
-unlink $nginx_conf;
-unlink "$cache_dir/nginx_error.log";
-unlink "$cache_dir/nginx_access.log";
-rmdir $cache_dir if -d $cache_dir;
+END {
+    stop_nginx();
+    unlink $nginx_conf;
+    unlink "$cache_dir/nginx_error.log";
+    unlink "$cache_dir/nginx_access.log";
+    rmdir $cache_dir if -d $cache_dir;
+}
 
 done_testing();

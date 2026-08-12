@@ -1,27 +1,19 @@
-use strict;
-use warnings;
+use strict; use warnings;
 
-use Test::More;
+use Test::More tests => 8;
 
-BEGIN {
-    # Logging disabled by default - no environment variable needed
-    delete $ENV{LLAMA_LOG_ENABLE};
-    eval { require Llama };
-    if ($@) {
-        plan skip_all => "Llama XS module not loadable: $@";
-        exit 0;
-    }
-    plan tests => 8;
-}
+use FindBin;
+use lib "$FindBin::Bin/..";
+use lib "$FindBin::Bin/../blib/arch";
 
-# Test 1: Module loads with logging DISABLED (default behavior)
-ok(1, 'Llama module loaded');
+delete local $ENV{LLAMA_LOG_ENABLE};
+use_ok("Llama");
 
 # Test 2: Backend init works when logging is suppressed  
 eval { 
     Llama::backend_init(); 
 };
-ok(!$@, 'backend_init() succeeds with logs suppressed (default)');
+is($@, "", "backend_init()");
 
 SKIP: {
 
@@ -34,7 +26,7 @@ if (-f $model_path) {
     };
     ok($@ eq '' && defined $model_ptr && $model_ptr > 0, 
        'Model loads successfully with default (suppressed) logging');
-    
+
     # Clean up model pointer for next test
     if (defined $model_ptr && $model_ptr > 0) {
         Llama::llama_model_free($model_ptr);
@@ -85,5 +77,5 @@ for my $key (sort keys %default_states) {
 
 Llama::backend_free();
 
-done_testing();
 };
+done_testing();

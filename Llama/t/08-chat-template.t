@@ -1,18 +1,13 @@
-use strict;
-use warnings;
+use strict; use warnings;
 
-use Test::More;
+use Test::More tests => 10;
 
-BEGIN {
-    eval { require Llama; };
-    if ($@) {
-        plan skip_all => "Llama XS module not loadable: $@";
-        exit 0;
-    }
-}
+use FindBin;
+use lib "$FindBin::Bin/..";
+use lib "$FindBin::Bin/../blib/arch";
 
 # Test 1: Module loads
-ok(1, 'Llama module loaded');
+use_ok("Llama");
 
 # Test 2: Backend init
 eval { Llama::backend_init(); };

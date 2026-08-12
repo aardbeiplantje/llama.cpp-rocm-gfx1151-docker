@@ -1,22 +1,17 @@
-use strict;
-use warnings;
+use strict; use warnings;
 
-use Test::More;
+use Test::More tests => 13;
 
-BEGIN {
-    eval { require Llama; };
-    if ($@) {
-        plan skip_all => "Llama XS module not loadable: $@";
-        exit 0;
-    }
-}
+use FindBin;
+use lib "$FindBin::Bin/..";
+use lib "$FindBin::Bin/../blib/arch";
 
 # Test 1: Module loads
-ok(1, 'Llama module loaded');
+use_ok("Llama");
 
 # Test 2: Backend init
 eval { Llama::backend_init(); };
-ok(!$@, 'backend init works');
+is($@, "", 'backend init works');
 
 # Test 3: Load model
 my $model_path = $ENV{GGUF_MODEL} // 'Qwen3.5-4B-ROCMFP4.gguf';
@@ -24,13 +19,8 @@ my $model;
 eval {
     $model = Llama::model_load($model_path);
 };
-if ($@) {
-    ok(0, "model_load: $@");
-    Llama::backend_free();
-    plan skip_all => "Could not load test model";
-    exit 0;
-}
-ok(1, 'model loaded successfully');
+is($@, "", "no die model_load($model_path)");
+ok(defined $model, "model loaded");
 
 # Test 4: Create context
 my $ctx;
@@ -42,14 +32,8 @@ eval {
         n_threads => 4,
     );
 };
-if ($@) {
-    ok(0, "context init: $@");
-    $model->DESTROY;
-    Llama::backend_free();
-    plan skip_all => "Could not create context";
-    exit 0;
-}
-ok(1, 'context created successfully');
+is($@, "", "no die Llama::Context->new()");
+ok(defined $ctx, 'context created successfully');
 
 # Test 5: Get vocab
 my $vocab = $model->vocab;

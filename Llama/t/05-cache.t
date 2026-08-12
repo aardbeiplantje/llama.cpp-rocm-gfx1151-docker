@@ -1,19 +1,16 @@
-use strict;
-use warnings;
+use strict; use warnings;
 
-use Test::More;
+use Test::More tests => 63;
+
+use FindBin;
+use lib "$FindBin::Bin/..";
+use lib "$FindBin::Bin/../blib/arch";
+
 use File::Temp qw(tempdir);
 
-BEGIN {
-    eval { require Llama::Cache; };
-    if ($@) {
-        plan skip_all => "Llama::Cache not loadable: $@";
-        exit 0;
-    }
-}
-
 # Test 1: Module loads
-ok(1, 'Llama::Cache module loaded');
+use_ok("Llama");
+use_ok("Llama::Cache");
 
 # Test 2: Create cache with model
 my $model_path = $ENV{GGUF_MODEL} // 'Qwen3.5-4B-ROCMFP4.gguf';
@@ -77,7 +74,7 @@ my $result = $cache->chat_completion($slot_id, [{role => "user", content => "The
 ok(defined $result, "chat_completion returned result");
 ok(defined $result->{id}, "result has id");
 ok(defined $result->{choices}, "result has choices");
-ok(scalar @{$result->{choices}} > 0, "result has at least one choice");
+ok(scalar @{$result->{choices} // []} > 0, "result has at least one choice");
 ok(defined $result->{choices}[0]{message}{content}, "choice has message content");
 ok(defined $result->{usage}, "result has usage");
 ok($result->{usage}{prompt_tokens} > 0, "usage has prompt_tokens > 0");
@@ -100,6 +97,7 @@ ok($comp_result->{usage}{prompt_tokens} > 0, "completion usage has prompt_tokens
 # Test 8: Embeddings
 my $emb = $cache->embeddings(0, "The quick brown fox");
 ok(ref $emb eq 'ARRAY', "embeddings returns arrayref");
+$emb //= [];
 ok(scalar @$emb > 0, "embeddings has elements");
 ok(scalar @$emb == $n_embd, "embeddings length matches n_embd ($n_embd)");
 
@@ -162,7 +160,7 @@ ok(-f $mmap_cache_file, "mmap cache file exists");
 my $slot_d = $cache->alloc_slot();
 my $loaded = $cache->load_slot_from_mmap_file($slot_d, $mmap_cache_file);
 ok($loaded > 0, "load_slot_from_mmap_file loaded $loaded bytes");
-my $n_tokens_loaded = $cache->get_slot($slot_d)->{n_tokens};
+my $n_tokens_loaded = ($cache->get_slot($slot_d) // {})->{n_tokens};
 ok($n_tokens_loaded > 0 && $n_tokens_loaded < 1000, "loaded slot has $n_tokens_loaded tokens");
 
 # Test 17: conv_id slot reuse
@@ -171,7 +169,7 @@ my $slot_e = $cache->alloc_slot($conv_id);
 ok(defined $slot_e, "alloc_slot with conv_id returned $slot_e");
 my $messages3 = [{ role => "user", content => "First turn" }];
 $cache->chat_completion($slot_e, $messages3, 8, { conv_id => $conv_id });
-my $n_tokens_first = $cache->get_slot($slot_e)->{n_tokens};
+my $n_tokens_first = ($cache->get_slot($slot_e) // {})->{n_tokens};
 ok($n_tokens_first > 0, "first turn has $n_tokens_first tokens");
 
 my $slot_f = $cache->alloc_slot($conv_id);
@@ -191,18 +189,18 @@ ok($saved_offset > 0, "save_slot_to_mmap_file with offset saved $saved_offset by
 my $slot_i = $cache->alloc_slot();
 my $loaded_offset = $cache->load_slot_from_mmap_file($slot_i, $mmap_offset_file);
 ok($loaded_offset > 0, "load_slot_from_mmap_file with offset loaded $loaded_offset bytes");
-my $n_tokens_loaded_offset = $cache->get_slot($slot_i)->{n_tokens};
+my $n_tokens_loaded_offset = ($cache->get_slot($slot_i) // {})->{n_tokens};
 ok($n_tokens_loaded_offset > 0 && $n_tokens_loaded_offset < 1000, "loaded slot with offset has $n_tokens_loaded_offset tokens");
 
 # Test 19: auto-restore uses mmap when available
 my $slot_j = $cache->alloc_slot();
 my $messages5 = [{ role => "user", content => "Test auto-restore mmap" }];
 $cache->chat_completion($slot_j, $messages5, 8);
-my $n_tokens_before_free = $cache->get_slot($slot_j)->{n_tokens};
+my $n_tokens_before_free = ($cache->get_slot($slot_j) // {})->{n_tokens};
 ok($n_tokens_before_free > 0, "slot $slot_j has $n_tokens_before_free tokens before free");
 $cache->free_slot($slot_j);
 my $slot_k = $cache->alloc_slot();
-my $n_tokens_after_restore = $cache->get_slot($slot_k)->{n_tokens};
+my $n_tokens_after_restore = ($cache->get_slot($slot_k) // {})->{n_tokens};
 ok($n_tokens_after_restore > 0 && $n_tokens_after_restore < 1000, "auto-restore with mmap loaded $n_tokens_after_restore tokens into slot $slot_k");
 
 # Cleanup

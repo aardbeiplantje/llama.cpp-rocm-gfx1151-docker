@@ -1,22 +1,12 @@
-use strict;
-use warnings;
+use strict; use warnings;
 
-use Test::More;
+use Test::More tests => 4;
 
-# The XS module requires ROCm libs (libhipblas, librocblas, libamdhip64)
-# which are only available on Strix Halo gfx1151 systems.
-# This test suite is designed to run on the target hardware.
-BEGIN {
-    $ENV{PERL5LIB} = 'blib/lib:blib/arch' unless $ENV{PERL5LIB};
-    eval { require Llama; };
-    if ($@) {
-        plan skip_all => "Llama XS module not loadable (ROCm libs missing or not on Strix Halo): $@";
-        exit 0;
-    }
-    plan tests => 4;
-}
+use FindBin;
+use lib "$FindBin::Bin/..";
+use lib "$FindBin::Bin/../blib/arch";
 
-ok(1, 'Llama module loaded');
+use_ok("Llama");
 
 # Test 1: backend init / free
 eval { Llama::backend_init(); Llama::backend_free(); };

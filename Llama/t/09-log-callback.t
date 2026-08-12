@@ -1,4 +1,10 @@
-use Test::More;
+use strict; use warnings;
+
+use Test::More tests => 7;
+
+use FindBin;
+use lib "$FindBin::Bin/..";
+use lib "$FindBin::Bin/../blib/arch";
 
 use Data::Dumper;
 

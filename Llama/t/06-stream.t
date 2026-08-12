@@ -1,18 +1,14 @@
-use strict;
-use warnings;
+use strict; use warnings;
 
-use Test::More;
+use Test::More tests => 53;
 
-BEGIN {
-    eval { require Llama::Cache::Stream; };
-    if ($@) {
-        plan skip_all => "Llama::Cache::Stream not loadable: $@";
-        exit 0;
-    }
-}
+use FindBin;
+use lib "$FindBin::Bin/..";
+use lib "$FindBin::Bin/../blib/arch";
 
 # Test 1: Module loads
-ok(1, 'Llama::Cache::Stream module loaded');
+use_ok("Llama");
+use_ok("Llama::Cache::Stream");
 
 # Test 2: Create new stream
 my $stream = Llama::Cache::Stream->new("conv-abc-123");
