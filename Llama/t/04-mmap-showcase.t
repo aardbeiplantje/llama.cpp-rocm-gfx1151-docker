@@ -59,7 +59,7 @@ my $decode_ret = $ctx->decode($batch);
 ok($decode_ret == 0, "decode returned status $decode_ret");
 
 # Test 5: Save KV cache state to file
-my $tmpdir = tempdir('llama_mmap_test_XXXXXX', CLEANUP => 0);
+my $tmpdir = tempdir('llama_mmap_test_XXXXXX', CLEANUP => 0, DIR => "/tmp");
 my $state_path = "$tmpdir/state.bin";
 my $session_path = "$tmpdir/session.bin";
 
@@ -118,15 +118,17 @@ ok($bytes3 > 0, "transferred $bytes3 bytes from ctx2 to ctx3");
 
 # Cleanup
 $batch->DESTROY if $batch;
-$ctx->DESTROY if $ctx;
-$ctx2->DESTROY if $ctx2;
-$ctx3->DESTROY if $ctx3;
+$ctx->DESTROY   if $ctx;
+$ctx2->DESTROY  if $ctx2;
+$ctx3->DESTROY  if $ctx3;
 $model->DESTROY;
 Llama::backend_free();
 
 # Clean up temp files
-unlink $state_path if -f $state_path;
-unlink $session_path if -f $session_path;
-rmdir $tmpdir if -d $tmpdir;
+END {
+    unlink $state_path    if -f $state_path;
+    unlink $session_path  if -f $session_path;
+    rmdir $tmpdir         if -d $tmpdir;
+};
 
 done_testing();

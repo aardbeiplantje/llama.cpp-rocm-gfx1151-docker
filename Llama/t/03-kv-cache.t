@@ -88,7 +88,7 @@ $ctx2->DESTROY;
 undef $ctx2;
 
 # Test 10: save_session saves to file
-my $tmpdir = tempdir('llama_session_XXXXXX', CLEANUP => 1);
+my $tmpdir = tempdir('llama_session_XXXXXX', CLEANUP => 1, DIR => "/tmp");
 my $session_path = "$tmpdir/session.bin";
 my $saved_tokens = [1, 2, 3, 4, 5];
 my $save_result = $ctx->save_session($session_path, $saved_tokens);
@@ -148,6 +148,8 @@ $model->DESTROY;
 Llama::backend_free();
 
 # Clean up session file and temp dir
-unlink $session_path if defined $session_path && -f $session_path;
+END {
+    unlink $session_path if defined $session_path && -f $session_path;
+}
 
 done_testing();

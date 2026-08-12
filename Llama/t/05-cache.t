@@ -22,7 +22,7 @@ eval {
         n_batch    => 256,
         n_threads  => 4,
         n_slots    => 4,
-        cache_dir  => tempdir('cache_XXXXXX', CLEANUP => 0),
+        cache_dir  => tempdir('cache_XXXXXX', CLEANUP => 0, DIR => "/tmp"),
     );
 };
 if ($@) {
@@ -220,9 +220,12 @@ $cache->free_slot($slot_i) if defined $slot_i;
 $cache->free_slot($slot_j) if defined $slot_j;
 $cache->free_slot($slot_k) if defined $slot_k;
 $cache->DESTROY;
-unlink $cache_file if -f $cache_file;
-unlink $mmap_cache_file if -f $mmap_cache_file;
-unlink $mmap_offset_file if -f $mmap_offset_file;
-rmdir $cache->{cache_dir} if -d $cache->{cache_dir};
+
+END {
+    unlink $cache_file         if -f $cache_file;
+    unlink $mmap_cache_file    if -f $mmap_cache_file;
+    unlink $mmap_offset_file   if -f $mmap_offset_file;
+    rmdir $cache->{cache_dir}  if -d $cache->{cache_dir};
+};
 
 done_testing();
