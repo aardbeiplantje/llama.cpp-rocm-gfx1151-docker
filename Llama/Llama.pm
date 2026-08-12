@@ -33,7 +33,7 @@ sub setup_rocm_env {
 
 sub new {
     my ($class, $path, %opts) = @_;
-    setup_rocm_env();
+    Llama::setup_rocm_env();
     Llama::backend_init();
     my $model = Llama::model_load($path);
     return unless defined $model;
@@ -49,49 +49,6 @@ sub new {
         model   => $model,
         context => $ctx,
     }, $class;
-}
-
-sub generate {
-    my ($self, $prompt, $n_predict, $sampler_chain) = @_;
-    my $vocab = $self->{model}->vocab();
-    my $ctx   = $self->{context};
-
-    $sampler_chain //= default_sampler();
-
-    my @tokens = $vocab->tokenize($prompt);
-    push @tokens, 1; # BOS if not already included
-
-    {
-        my $batch = Llama::Batch->new(max_tokens => scalar @tokens);
-        $batch->set_tokens(@tokens);
-        $ctx->decode($batch);
-    }
-
-    my $output = "";
-    my $n_ctx = $ctx->n_ctx();
-
-    for my $i (0 .. $n_predict - 1) {
-        my $n_tokens = scalar @tokens;
-        if ($n_tokens >= $n_ctx) {
-            last;
-        }
-
-        my $last_tok = $tokens[-1];
-        my $pos = $n_tokens - 1;
-
-        if ($last_tok >= 0) {
-            my $b = Llama::Batch->new(max_tokens => 1);
-            $b->set_token(0, $last_tok, $pos, 0);
-            $ctx->decode($b);
-        }
-
-        my $new_tok = Llama::llama_sampler_sample($sampler_chain, $ctx->{ptr}, 0);
-        push @tokens, $new_tok;
-
-        $output .= $vocab->token_to_piece($new_tok);
-    }
-
-    return $output;
 }
 
 sub sampler_chain {
@@ -115,7 +72,7 @@ sub DESTROY {
     return unless $self;
     delete $self->{context};
     delete $self->{model};
-    backend_free();
+    Llama::backend_free();
     return;
 }
 

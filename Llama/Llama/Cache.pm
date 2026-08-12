@@ -6,7 +6,6 @@ use Llama::Types;
 use Llama::Model;
 use Llama::Context;
 use Llama::Batch;
-use Llama::Vocab;
 use Llama::ModelConfig;
 
 my $HAVE_MMAP;

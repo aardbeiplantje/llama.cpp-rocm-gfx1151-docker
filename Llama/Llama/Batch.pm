@@ -27,7 +27,7 @@ sub max_tokens {
 sub set_token {
     my ($self, $idx, $token, $pos, $seq_id) = @_;
     $seq_id = [$seq_id // 0] unless ref $seq_id;
-    Llama::llama_batch_set_token($self->{ptr}, $idx, $token, $pos, $seq_id);
+    return Llama::llama_batch_set_token($self->{ptr}, $idx, $token, $pos, $seq_id);
 }
 
 sub set_tokens {
@@ -36,7 +36,7 @@ sub set_tokens {
         my ($token, $pos, @seq) = @{$token_pos_seq[$i]};
         $self->set_token($i, $token, $pos, \@seq);
     }
-    Llama::llama_batch_set_n_tokens($self->{ptr}, scalar @token_pos_seq);
+    return Llama::llama_batch_set_n_tokens($self->{ptr}, scalar @token_pos_seq);
 }
 
 sub DESTROY {

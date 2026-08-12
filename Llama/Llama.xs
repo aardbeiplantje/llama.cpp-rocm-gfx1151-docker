@@ -9,9 +9,6 @@
 #include "string.h"
 #include "llama.h"
 
-static llama_token* TLlama_tokens = NULL;
-static int32_t TLlama_token_count = 0;
-static STRLEN TLlama_text_len = 0;
 static llama_token* TLlama_loaded_tokens = NULL;
 static size_t     TLlama_loaded_count = 0;
 
@@ -22,12 +19,17 @@ typedef void (*ggml_log_callback)(enum ggml_log_level level, const char * text, 
 
 
 
-#define THISSvOK(sv)  (sv != NULL && SvROK(sv) && SvOK(SvRV(sv)) && INT2PTR(void *, SvIV(SvRV(sv))) != NULL)
+#define THISSvOK(sv)  (items >= 1 && sv != NULL && SvROK(sv) && SvOK(SvRV(sv)) && INT2PTR(void *, SvIV(SvRV(sv))) != NULL)
 #define THIS(sv)      INT2PTR(void *, SvIV(SvRV(sv)))
 #define LLM(sv)       ((p_llama_model *)THIS(sv))->llm
+#define VOCAB(sv)     ((p_llama_vocab *)THIS(sv))->vocab
 typedef struct {
   llama_model *llm = NULL;
 } p_llama_model;
+
+typedef struct {
+  void *vocab = NULL;
+} p_llama_vocab;
 
 /* No-op log callback for disabling logs when no custom handler set */
 static void llama_log_noop(enum ggml_log_level level, const char * text, void * user_data) {
@@ -502,53 +504,66 @@ L_llama_get_embeddings(IV ctx)
 # Tokenization — persistent buffer for tokenized results
 # ============================================================================
 
-IV
-L_llama_tokenize(IV vocab, SV* text, IV max_tokens, bool add_special, bool parse_special)
+AV *
+L_llama_tokenize(SV *v=NULL, SV* text, IV max_tokens, bool add_special, bool parse_special)
     CODE:
-        if (TLlama_tokens) free(TLlama_tokens);
-        TLlama_text_len = 0;
-        char* text_str = SvPV(text, TLlama_text_len);
-        TLlama_tokens = (llama_token*)malloc((size_t)max_tokens * sizeof(llama_token));
-        int32_t n = llama_tokenize((const struct llama_vocab*)vocab, text_str, (int32_t)TLlama_text_len, TLlama_tokens, (int32_t)max_tokens, add_special, parse_special);
+        if(!THISSvOK(v))
+            XSRETURN_UNDEF;
+        STRLEN text_len = 0;
+        char* text_str = SvPV(text, text_len);
+        llama_token *tokens = NULL;
+        Newxz(tokens, max_tokens, llama_token);
+        if(!tokens)
+            XSRETURN_UNDEF;
+        int32_t n = llama_tokenize((const llama_vocab*)VOCAB(v), text_str, (int32_t)text_len, (llama_token *)tokens, (int32_t)max_tokens, add_special, parse_special);
         if (n < 0) {
-            free(TLlama_tokens);
-            TLlama_tokens = NULL;
-            TLlama_token_count = 0;
-            RETVAL = -1;
-        } else {
-            TLlama_token_count = n;
-            RETVAL = (IV)n;
+            Safefree(tokens);
+            XSRETURN_UNDEF;
         }
+
+        AV *av = newAV();
+        av_extend(av, n - 1); // Pre-size the Perl AV array to avoid multiple reallocations
+        for (int i = 0; i < n; i++) {
+            av_push(av, newSViv((IV)tokens[i]));
+        }
+
+        Safefree(tokens);
+        RETVAL = av;
     OUTPUT:
         RETVAL
 
-IV
-L_llama_tokenize_get_token(IV idx)
-    CODE:
-        int32_t i = (int32_t)idx;
-        if (!TLlama_tokens || i < 0 || i >= TLlama_token_count) {
-            RETVAL = -1;
-        } else {
-            RETVAL = (IV)TLlama_tokens[i];
-        }
-    OUTPUT:
-        RETVAL
-
-void
-L_llama_tokenize_free()
-    CODE:
-        free(TLlama_tokens);
-        TLlama_tokens = NULL;
-        TLlama_token_count = 0;
 
 # ============================================================================
 # Token to text piece
 # ============================================================================
 
-IV
-L_llama_token_to_piece(IV vocab, IV token, char* buf, IV buf_len, IV lstrip, bool special)
+SV *
+L_llama_token_to_piece(SV *v=NULL, ...)
     CODE:
-        RETVAL = (IV)llama_token_to_piece((const struct llama_vocab*)vocab, (llama_token)token, buf, (int32_t)buf_len, (int32_t)lstrip, special);
+        if(!THISSvOK(v))
+            XSRETURN_UNDEF;
+        if(items < 2)
+            XSRETURN_UNDEF;
+        SV *token = POPs;
+        if(!token || !SvOK(token) || !SvIV(token))
+            XSRETURN_UNDEF;
+        SV *vlstrip = POPs;
+        int32_t lstrip = 0;
+        if(!vlstrip || !SvOK(vlstrip) || !SvIV(vlstrip))
+            lstrip = 0;
+        else
+            lstrip = SvIV(vlstrip);
+        SV *vspecial = POPs;
+        bool special = 0;
+        if(!vspecial || !SvOK(vspecial) || !SvIV(vspecial))
+            special = 0;
+        else
+            special = SvIV(vspecial);
+        char buf[32];
+        int n = llama_token_to_piece((const llama_vocab*)VOCAB(v), (llama_token)SvIV(token), buf, 32, (int32_t)lstrip, special);
+        if (n < 0)
+            XSRETURN_UNDEF;
+        RETVAL = newSVpvn_utf8(buf, n, 1);
     OUTPUT:
         RETVAL
 
@@ -556,10 +571,16 @@ L_llama_token_to_piece(IV vocab, IV token, char* buf, IV buf_len, IV lstrip, boo
 # Detokenization (tokens → text)
 # ============================================================================
 
-IV
-L_llama_detokenize(IV vocab, IV* tokens, IV n_tokens, char* buf, IV buf_len, bool remove_special, bool unparse_special)
+SV *
+L_llama_detokenize(SV *v=NULL, IV* tokens, IV n_tokens, bool remove_special, bool unparse_special)
     CODE:
-        RETVAL = (IV)llama_detokenize((const struct llama_vocab*)vocab, (const llama_token*)tokens, (int32_t)n_tokens, buf, (int32_t)buf_len, remove_special, unparse_special);
+        if(!THISSvOK(v))
+            XSRETURN_UNDEF;
+        char buf[32];
+        int n = (IV)llama_detokenize((const struct llama_vocab*)VOCAB(v), (const llama_token*)tokens, (int32_t)n_tokens, buf, 32, remove_special, unparse_special);
+        if (n < 0)
+            XSRETURN_UNDEF;
+        RETVAL = newSVpvn_utf8(buf, n, 1);
     OUTPUT:
         RETVAL
 
@@ -567,38 +588,72 @@ L_llama_detokenize(IV vocab, IV* tokens, IV n_tokens, char* buf, IV buf_len, boo
 # Vocabulary query
 # ============================================================================
 
-IV
-L_llama_vocab_n_tokens(IV vocab)
+void
+L_llama_vocab_n_tokens(SV *v=NULL)
+    PPCODE:
+        dTHX;
+        dSP;
+        if(!THISSvOK(v))
+            XSRETURN_UNDEF;
+        XSRETURN_IV((IV)llama_vocab_n_tokens((const llama_vocab*)VOCAB(v)));
+
+SV *
+L_llama_vocab_bos(SV *v=NULL)
     CODE:
-        RETVAL = (IV)llama_vocab_n_tokens((const struct llama_vocab*)vocab);
+        if(!THISSvOK(v))
+            XSRETURN_UNDEF;
+        llama_token t = llama_vocab_bos((const llama_vocab*)VOCAB(v));
+        char buf[32];
+        int n = llama_token_to_piece((const llama_vocab*)VOCAB(v), t, buf, sizeof(buf), 0, true);
+        if (n < 0)
+            XSRETURN_UNDEF;
+
+        RETVAL = newSVpvn_utf8(buf, n, 1);
     OUTPUT:
         RETVAL
 
-llama_token
-L_llama_vocab_bos(IV vocab)
+SV *
+L_llama_vocab_eos(SV *v=NULL)
     CODE:
-        RETVAL = llama_vocab_bos((const struct llama_vocab*)vocab);
+        if(!THISSvOK(v))
+            XSRETURN_UNDEF;
+        llama_token t = llama_vocab_eos((const llama_vocab*)VOCAB(v));
+        char buf[32];
+        int n = llama_token_to_piece((const llama_vocab*)VOCAB(v), t, buf, sizeof(buf), 0, true);
+        if (n < 0)
+            XSRETURN_UNDEF;
+
+        RETVAL = newSVpvn_utf8(buf, n, 1);
     OUTPUT:
         RETVAL
 
-llama_token
-L_llama_vocab_eos(IV vocab)
+SV *
+L_llama_vocab_eot(SV *v=NULL)
     CODE:
-        RETVAL = llama_vocab_eos((const struct llama_vocab*)vocab);
+        if(!THISSvOK(v))
+            XSRETURN_UNDEF;
+        llama_token t = llama_vocab_eot((const llama_vocab*)VOCAB(v));
+        char buf[32];
+        int n = llama_token_to_piece((const llama_vocab*)VOCAB(v), t, buf, sizeof(buf), 0, true);
+        if (n < 0)
+            XSRETURN_UNDEF;
+
+        RETVAL = newSVpvn_utf8(buf, n, 1);
     OUTPUT:
         RETVAL
 
-llama_token
-L_llama_vocab_eot(IV vocab)
+SV *
+L_llama_vocab_nl(SV *v=NULL)
     CODE:
-        RETVAL = llama_vocab_eot((const struct llama_vocab*)vocab);
-    OUTPUT:
-        RETVAL
+        if(!THISSvOK(v))
+            XSRETURN_UNDEF;
+        llama_token t = llama_vocab_nl((const llama_vocab*)VOCAB(v));
+        char buf[32];
+        int n = llama_token_to_piece((const llama_vocab*)VOCAB(v), t, buf, sizeof(buf), 0, true);
+        if (n < 0)
+            XSRETURN_UNDEF;
 
-llama_token
-L_llama_vocab_nl(IV vocab)
-    CODE:
-        RETVAL = llama_vocab_nl((const struct llama_vocab*)vocab);
+        RETVAL = newSVpvn_utf8(buf, n, 1);
     OUTPUT:
         RETVAL
 
@@ -734,7 +789,23 @@ L_llama_model_get_vocab(SV *m=NULL)
         dSP;
         if(!THISSvOK(m))
             XSRETURN_UNDEF;
-        XSRETURN_IV((IV)llama_model_get_vocab(LLM(m)));
+        void *v = (void *)llama_model_get_vocab((const llama_model*)LLM(m));
+        //printf("VOCAB CREATE 0 FILE %s\n", SvPVX(file));
+        if(!v)
+            XSRETURN_UNDEF;
+        //printf("VOCAB CREATE 1 FILE %s\n", SvPVX(file));
+        void *ptr = NULL;
+        Newxz(ptr, 1, p_llama_vocab);
+        //printf("VOCAB CREATE 1 PTR %p\n", ptr);
+        if(!ptr)
+            XSRETURN_IV(0);
+        SV *sv = sv_newmortal();
+        SvPOK_only(sv);
+        sv_setref_pv(sv, "Llama::Vocab", ptr);
+        SvREADONLY_on(sv);
+        VOCAB(sv) = v;
+        ST(0) = sv;
+        XSRETURN(1);
 
 # ============================================================================
 # Context → model query

@@ -9,6 +9,7 @@ use strict; use warnings;
 *n_params     = *Llama::llama_model_n_params;
 *n_model_size = *Llama::llama_model_n_model_size;
 *desc         = *Llama::llama_model_desc;
+*vocab        = *Llama::llama_model_get_vocab;
 
 sub chat_template {
     my ($self, $name) = @_;
@@ -18,12 +19,6 @@ sub chat_template {
 sub apply_chat_template {
     my ($self, $messages, $add_ass) = @_;
     return Llama::llama_chat_apply_template(undef, $messages, $add_ass // 0);
-}
-
-sub vocab {
-    my ($self) = @_;
-    my $vocab_ptr = Llama::llama_model_get_vocab($self);
-    return Llama::Vocab->new($vocab_ptr);
 }
 
 sub DESTROY {

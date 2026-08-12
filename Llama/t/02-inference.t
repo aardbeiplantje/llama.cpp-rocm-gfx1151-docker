@@ -1,6 +1,6 @@
 use strict; use warnings;
 
-use Test::More tests => 13;
+use Test::More tests => 14;
 
 use FindBin;
 use lib "$FindBin::Bin/..";
@@ -59,6 +59,7 @@ ok(defined $logit, "got logits for token " . (scalar(@tokens) - 1));
 
 # Test 9: Token to piece
 my $last_tok = $tokens[-1];
+ok(defined $last_tok, "last TOK defined");
 my $piece = $vocab->token_to_piece($last_tok);
 ok(length($piece) > 0, "token_to_piece returned non-empty string: '$piece'");
 
