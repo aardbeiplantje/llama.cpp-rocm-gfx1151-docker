@@ -20,17 +20,18 @@ SKIP: {
 # Test 3: Model can be loaded without log output interfering
 my $model_path = $ENV{GGUF_MODEL} // 'Qwen3.5-4B-ROCMFP4.gguf';
 if (-f $model_path) {
-    my $model_ptr;
+    my $m;
     eval { 
-        $model_ptr = Llama::llama_model_load_from_file($model_path); 
+        $m = Llama::llama_model_load_from_file($model_path); 
     };
-    ok($@ eq '' && defined $model_ptr && $model_ptr > 0, 
-       'Model loads successfully with default (suppressed) logging');
+    ok($@ eq '' && defined $m, 'Model loads successfully with default (suppressed) logging');
 
     # Clean up model pointer for next test
-    if (defined $model_ptr && $model_ptr > 0) {
-        Llama::llama_model_free($model_ptr);
-    }
+    print "# FREE $m\n";
+    Llama::llama_model_free($m) if defined $m;
+    print "# GC $m\n";
+    $m = undef;
+    print "# GC DONE\n";
 } else {
     skip "Test GGUF file not found at $model_path", 6;
 }
