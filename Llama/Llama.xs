@@ -2,7 +2,7 @@
 #include "string.h"
 #include "llama.h"
 
-/* ggml_log_callback type definition */
+/* ggml_log_callback type definition */  
 typedef void (*ggml_log_callback)(enum ggml_log_level level, const char * text, void * user_data);
 
 #include <EXTERN.h>
@@ -13,42 +13,115 @@ static llama_token* TLlama_tokens = NULL;
 static int32_t TLlama_token_count = 0;
 static STRLEN TLlama_text_len = 0;
 static llama_token* TLlama_loaded_tokens = NULL;
-static size_t TLlama_loaded_count = 0;
+static size_t     TLlama_loaded_count = 0;
 
-/* No-op log callback for disabling logs */
+/* Global storage for Perl log callback code reference (like curl's p_curl_easy cbs array) */
+static SV *log_cb_sv = NULL;   /* The coderef $cb->($level, $message, $data?) */
+static SV *log_cd_sv = NULL;   /* Optional context data passed as last arg to callback */
+
+/* No-op log callback for disabling logs when no custom handler set */
 static void llama_log_noop(enum ggml_log_level level, const char * text, void * user_data) {
     (void)level; (void)text; (void)user_data;
+}
+
+/* Custom log callback that invokes registered Perl subroutine via eval 
+ * Pattern borrowed from curl.xs:curl_debugfunction_cb - uses dTHX/dSP macros
+ * Signature: sub my_logger($level, $message, $context_data_optional) { ... }  
+ */
+static void llama_log_custom_via_perl(enum ggml_log_level level, const char * text, void * userp) {
+    dTHX;       /* Get current perl interpreter pointer (works because called from XS thread context) */
+    dSP;        /* Declare stack pointer macro needed by PUSHMARK/XPUSHs/etc */
+    
+    if (!text || !log_cb_sv || SvTYPE(log_cb_sv) != SVt_PVCV) {
+        return;  /* Not initialized or invalid cb - silently ignore like curl does */
+    }
+    
+    ENTER;      /* Save old scope state before calling into Perl code */
+    SAVETMPS;   /* Mark temporary values to be freed after LEAVE */
+    
+    PUSHMARK(SP);                    /* Start pushing arguments onto Perl call stack */
+    XPUSHs(sv_2mortal(newSViv((IV)level)));         /* Arg1: log level enum as integer */
+    XPUSHs(sv_2mortal(newSVpv(text, -1)));          /* Arg2: message string (-1 = strlen) */
+    if (log_cd_sv && SvOK(log_cd_sv))               /* Arg3: optional context data */
+        XPUSHs(SvREFCNT_inc_NN(log_cd_sv));         /* Increment refcount for this arg push only */
+    else
+        XPUSHs(&PL_sv_undef);                        /* Pass undef if no context set */
+    
+    PUTBACK;     /* Write back SP so Perl can see our pushed args */
+    
+    /* Call the stored perl coderef with eval wrapper to catch exceptions (like curl.xs line ~87-90) */  
+    int count = call_sv(log_cb_sv, G_EVAL | G_DISCARD | G_KEEPERR);  /* void return expected
+    
+    SPAGAIN;     /* Refresh stack pointer after call returns */
+    SV *err_tmp = ERRSV;              /* Check $@ for any errors from callback execution */
+    if (SvTRUE(err_tmp)) POPs;        /* Pop error value off stack to avoid leak like curl does at ~96-97 */
+    
+    FREETMPS;   /* Free temporaries created between ENTER/SAVETMPS and here */  
+    LEAVE;      /* Restore old scope state - cleanup done by SAVETMPS/FREETMPS pair above*/
 }
 
 MODULE = Llama            PACKAGE = Llama
 
 # ============================================================================
-# Lifecycle / Logging Control
+# Lifecycle / Logging Control  
 # ============================================================================
 
 void
-llama_backend_init()
+set_log_callback(SV *cb, ...)
+    PREINIT:
+        SV *cd = NULL;   /* Optional context data passed as last arg to callback sub($lvl,$msg,$data?) */
+        int items_arg;
+    PPCODE:
+        dTHX;   /* Required because this is an XS entry point that may be called from pure Perl code */
+        
+        /* Parse optional second argument for user data context - curl pattern at ~1156-1170 */  
+        cd = &PL_sv_undef;  /* Default undef context like curl does when no CURLOPT_*DATA set */
+        for(items_arg = 1; items_arg < items && (!SvOK(cd) || SvTYPE(cd) == SVt_PVNV); items_arg++) {
+            if (items > items_arg) cd = ST(items_arg);
+        }
+        
+        /* Validate coderef type exactly like curl.xs line 102-103 does */
+        if (!cb || SvTYPE(cb) != SVt_PVCV) {
+            croak("callback must be a code reference");
+        }
+        
+        /* Store new callback with refcount increment like curl stores cbs[CB_DEBUG].cb struct member */
+        if (log_cb_sv) SvREFCNT_dec(log_cb_sv);      /* Decrement old cb before replacing it */
+        log_cb_sv = newSVsv(cb);                      /* Copy+refcount the new coderef */
+
+void llama_backend_init()
+
+
     CODE:
-        /* Logging control via environment variable */
-        /* Default behavior: logging DISABLED (suppress all llama.cpp log output) */
-        /* Set LLAMA_LOG_ENABLE=1 or true to re-enable logging if needed */
+        /* Priority order for logging configuration (like curl's CURLOPT_DEBUGFUNCTION vs default): */
+        /* 1. Custom Perl callback via set_log_callback() takes highest precedence */  
+        if (log_cb_sv && SvTYPE(log_cb_sv) == SVt_PVCV) {
+            llama_log_set((ggml_log_callback)llama_log_custom_via_perl, NULL);
+            llama_backend_init();
+            return;   /* Done - no env var check needed when custom handler installed */
+        }
+        
+        /* 2. Environment variable controls whether logs are suppressed or shown */
         const char *log_enable_env = PerlEnv_getenv("LLAMA_LOG_ENABLE");
-        int should_log = 0; /* default: disabled */
+        int should_log = 0; /* default: disabled/suppressed */
         
         if (log_enable_env && (strcmp(log_enable_env, "1") == 0 || strcmp(log_enable_env, "true") == 0)) {
-            should_log = 1; /* enabled by user request */
+            should_log = 1; /* enabled by user request like LLAMA_LOG_ENABLE=1 in shell */
         }
         
         if (should_log) {
-            llama_log_set(NULL, NULL); /* use default logger (outputs to stderr/stdout) */
+            llama_log_set(NULL, NULL); /* use default logger outputs to stderr/stdout */
         } else {
-            llama_log_set((ggml_log_callback)llama_log_noop, NULL); /* suppress logs */
+            llama_log_set((ggml_log_callback)llama_log_noop, NULL); /* suppress all llama.cpp logging output */
         }
         llama_backend_init();
 
 void
 llama_backend_free()
     CODE:
+        /* Clean up stored callbacks on backend shutdown like curl.xs DESTROY does at ~1104-1113 */  
+        if (log_cb_sv) SvREFCNT_dec_NN(log_cb_sv), log_cb_sv = NULL;
+        if (log_cd_sv) SvREFCNT_dec_NN(log_cd_sv), log_cd_sv = NULL;
         llama_backend_free();
 
 # ============================================================================
