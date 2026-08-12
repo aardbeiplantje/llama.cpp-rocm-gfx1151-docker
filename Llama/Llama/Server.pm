@@ -1,9 +1,6 @@
 package Llama::Server;
 
-use strict;
-use warnings;
-
-our $VERSION = '0.1.0';
+use strict; use warnings;
 
 use Fcntl qw(:flock);
 
@@ -26,11 +23,11 @@ sub init {
     my $n_threads      = $opts{n_threads}         || 16;
     my $n_threads_batch = $opts{n_threads_batch}  || 16;
 
-    Llama::setup_rocm_env() unless $ENV{_LLAMA_ENV_SETUP};
-    $ENV{_LLAMA_ENV_SETUP} = 1;
+    Llama::setup_rocm_env();
     Llama::backend_init();
     $model_ptr = Llama::llama_model_load_from_file($model_path);
     fork_workers($n_ctx, $n_batch, $n_threads, $n_threads_batch);
+    return;
 }
 
 sub fork_workers {

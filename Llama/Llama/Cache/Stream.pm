@@ -1,9 +1,6 @@
 package Llama::Cache::Stream;
 
-use strict;
-use warnings;
-
-our $VERSION = '0.1.0';
+use strict; use warnings;
 
 sub new {
     my ($class, $conv_id) = @_;

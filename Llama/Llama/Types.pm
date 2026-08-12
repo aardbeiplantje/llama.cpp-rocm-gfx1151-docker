@@ -1,9 +1,6 @@
 package Llama::Types;
 
-use strict;
-use warnings;
-
-our $VERSION = '0.1.0';
+use strict; use warnings;
 
 use Exporter 'import';
 our @EXPORT_OK = qw(

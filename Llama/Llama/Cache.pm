@@ -1,9 +1,6 @@
 package Llama::Cache;
 
-use strict;
-use warnings;
-
-our $VERSION = '0.1.0';
+use strict; use warnings;
 
 use Llama::Types;
 use Llama::Model;
@@ -12,7 +9,8 @@ use Llama::Batch;
 use Llama::Vocab;
 use Llama::ModelConfig;
 
-my $HAVE_MMAP = eval { require Sys::Mmap; Sys::Mmap->import(); 1 };
+my $HAVE_MMAP;
+BEGIN {eval { require Sys::Mmap; Sys::Mmap->import(); $HAVE_MMAP = 1; }};
 
 use Llama;
 
@@ -22,17 +20,6 @@ use Llama;
 
 sub new {
     my ($class, %opts) = @_;
-
-    unless ($ENV{_LLAMA_ENV_SETUP}) {
-        $ENV{HSA_OVERRIDE_GFX_VERSION}     = '11.5.1';
-        $ENV{GGML_CUDA_ENABLE_UNIFIED_MEMORY} = '1';
-        $ENV{GGML_HIP_FORCE_RS_GPU}         = '1';
-        $ENV{GGML_HIP_FORCE_KV_GPU}         = '1';
-        $ENV{GGML_HIP_ALLOC_GRAPH_RESERVE}  = '2048';
-        $ENV{HSA_FORCE_FINE_GRAIN_PCIE}      = '1';
-        $ENV{HSA_ENABLE_SDMA}                = '0';
-        $ENV{_LLAMA_ENV_SETUP} = 1;
-    }
 
     Llama::backend_init();
 

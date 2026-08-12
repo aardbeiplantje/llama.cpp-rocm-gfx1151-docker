@@ -1,9 +1,6 @@
 package Llama::ModelConfig;
 
-use strict;
-use warnings;
-
-our $VERSION = '0.1.0';
+use strict; use warnings;
 
 use Llama::Model;
 

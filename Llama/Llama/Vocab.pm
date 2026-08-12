@@ -1,10 +1,6 @@
 package Llama::Vocab;
 
-use strict;
-use warnings;
-use Carp qw(croak);
-
-our $VERSION = '0.1.0';
+use strict; use warnings;
 
 sub new {
     my ($class, $ptr) = @_;
@@ -55,9 +51,6 @@ sub tokenize {
     my ($self, $text, $max_tokens) = @_;
     $max_tokens //= length($text) * 2 + 10;
     my $n = Llama::llama_tokenize($self->{ptr}, $text, $max_tokens, 1, 0);
-    if ($n < 0) {
-        croak("tokenization error: text too long for buffer");
-    }
     my @tokens;
     for my $i (0 .. $n - 1) {
         push @tokens, Llama::llama_tokenize_get_token($i);
