@@ -19,11 +19,6 @@ BEGIN {
         plan skip_all => "nginx not found or not executable - skipping integration tests";
         exit 0;
     }
-    eval { require Llama::Cache };
-    if ($@) {
-        plan skip_all => "Llama::Cache not loadable: $@";
-        exit 0;
-    }
 }
 
 my $model_path = $ENV{GGUF_MODEL} // 'Qwen3.5-4B-ROCMFP4.gguf';

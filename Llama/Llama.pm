@@ -5,7 +5,6 @@ use warnings;
 
 our $VERSION = '0.1.0';
 
-use Llama::Types;
 use Llama::Model;
 use Llama::Context;
 use Llama::Batch;
