@@ -19,21 +19,24 @@ __PACKAGE__->bootstrap($VERSION);
 
 # ROCm / Strix Halo environment setup
 sub setup_rocm_env {
-    $ENV{HSA_OVERRIDE_GFX_VERSION}     = '11.5.1';
+    return unless $::ROCM_ENV_SETUP;
+    $::ROCM_ENV_SETUP = 1;
+    $ENV{HSA_OVERRIDE_GFX_VERSION}        = '11.5.1';
     $ENV{GGML_CUDA_ENABLE_UNIFIED_MEMORY} = '1';
-    $ENV{GGML_HIP_FORCE_RS_GPU}         = '1';
-    $ENV{GGML_HIP_FORCE_KV_GPU}         = '1';
-    $ENV{GGML_HIP_ALLOC_GRAPH_RESERVE}  = '2048';
-    $ENV{HSA_FORCE_FINE_GRAIN_PCIE}      = '1';
-    $ENV{HSA_ENABLE_SDMA}                = '0';
+    $ENV{GGML_HIP_FORCE_RS_GPU}           = '1';
+    $ENV{GGML_HIP_FORCE_KV_GPU}           = '1';
+    $ENV{GGML_HIP_ALLOC_GRAPH_RESERVE}    = '2048';
+    $ENV{HSA_FORCE_FINE_GRAIN_PCIE}       = '1';
+    $ENV{HSA_ENABLE_SDMA}                 = '0';
+    return;
 }
 
 sub backend_init {
-    Llama::llama_backend_init();
+    return Llama::llama_backend_init();
 }
 
 sub backend_free {
-    Llama::llama_backend_free();
+    return Llama::llama_backend_free();
 }
 
 sub model_load {
@@ -67,28 +70,27 @@ sub _get_embeddings_ptr {
 
 sub new {
     my ($class, $path, %opts) = @_;
-    setup_rocm_env() unless $ENV{_LLAMA_ENV_SETUP};
-    $ENV{_LLAMA_ENV_SETUP} = 1;
+    setup_rocm_env();
     backend_init();
     my $model = model_load($path);
+    return unless defined $model;
     my $ctx = Llama::Context->new(
         $model,
-        n_ctx        => $opts{n_ctx}        || 2048,
-        n_batch      => $opts{n_batch}       || 512,
-        n_threads    => $opts{n_threads}     || 16,
+        n_ctx           => $opts{n_ctx}           || 2048,
+        n_batch         => $opts{n_batch}         || 512,
+        n_threads       => $opts{n_threads}       || 16,
         n_threads_batch => $opts{n_threads_batch} || 16,
-        embeddings   => $opts{embeddings}    || 0,
+        embeddings      => $opts{embeddings}      || 0,
     );
-    my $self = bless {
+    return bless {
         model   => $model,
         context => $ctx,
     }, $class;
-    return $self;
 }
 
 sub generate {
     my ($self, $prompt, $n_predict, $sampler_chain) = @_;
-    my $vocab = $self->{model}->vocab;
+    my $vocab = $self->{model}->vocab();
     my $ctx   = $self->{context};
 
     my @tokens = $vocab->tokenize($prompt);
@@ -102,7 +104,7 @@ sub generate {
     $ctx->decode($batch);
 
     my @output;
-    my $n_ctx = $ctx->n_ctx;
+    my $n_ctx = $ctx->n_ctx();
 
     for my $i (0 .. $n_predict - 1) {
         my $n_tokens = scalar @tokens;
@@ -118,7 +120,6 @@ sub generate {
             my $b = Llama::Batch->new(max_tokens => 1);
             $b->set_token(0, $last_tok, $pos, 0);
             $ctx->decode($b);
-            $b->DESTROY;
         }
 
         my $sampler = $sampler_chain || $ctx->default_sampler;
@@ -129,7 +130,6 @@ sub generate {
         push @output, $piece;
     }
 
-    $batch->DESTROY;
     return join('', @output);
 }
 
@@ -164,20 +164,18 @@ sub greedy_sampler {
 
 sub sampler_chain {
     my ($class, @samplers) = @_;
-    my $chain = { ptr => Llama::llama_sampler_chain_init() };
-    for my $s (@samplers) {
-        Llama::llama_sampler_chain_add($chain->{ptr}, $s->{ptr});
-    }
-    return $chain;
+    my $c = Llama::llama_sampler_chain_init();
+    Llama::llama_sampler_chain_add($c, $_->{ptr}) for @samplers;
+    return $c;
 }
 
 sub DESTROY {
     my ($self) = @_;
-    if ($self) {
-        $self->{context}->DESTROY if $self->{context};
-        $self->{model}->DESTROY   if $self->{model};
-        backend_free();
-    }
+    return unless $self;
+    delete $self->{context};
+    delete $self->{model};
+    backend_free();
+    return;
 }
 
 1;

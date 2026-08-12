@@ -288,10 +288,11 @@ sub can_shift {
 
 sub DESTROY {
     my ($self) = @_;
-    if ($self && !$self->{freed}) {
-        Llama::llama_free($self->{ptr});
-        $self->{freed} = 1;
-    }
+    return unless $self;
+    return unless exists $self->{freed};
+    Llama::llama_free($self->{ptr});
+    delete $self->{freed};
+    return;
 }
 
 1;

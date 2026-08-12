@@ -532,7 +532,7 @@ sub chat_completion {
     $slot->{t_prompt} = (time() - $t0) * 1000;
     $slot->{n_tokens} = scalar @tokens;
     $slot->{state} = 'idle';
-    $batch->DESTROY;
+    undef $batch;
 
     my @output;
     my $n_ctx = $ctx->n_ctx;
@@ -544,10 +544,10 @@ sub chat_completion {
         my $last_tok = $tokens[-1];
         my $pos = $slot->{n_tokens} - 1;
 
-        my $b = Llama::Batch->new(max_tokens => 1);
-        $b->set_token(0, $last_tok, $pos, 0);
-        $ctx->decode($b);
-        $b->DESTROY;
+        my $ba = Llama::Batch->new(max_tokens => 1);
+        $ba->set_token(0, $last_tok, $pos, 0);
+        $ctx->decode($ba);
+        undef $ba;
 
         my $logit_ptr = Llama::_get_logits_ptr($ctx->{ptr});
         my @logits;
@@ -659,7 +659,7 @@ sub completion {
     $slot->{t_prompt} = (time() - $t0) * 1000;
     $slot->{n_tokens} = scalar @tokens;
     $slot->{state} = 'idle';
-    $batch->DESTROY;
+    undef $batch;
 
     my @output;
     my $n_ctx = $ctx->n_ctx;
@@ -671,10 +671,10 @@ sub completion {
         my $last_tok = $tokens[-1];
         my $pos = $slot->{n_tokens} - 1;
 
-        my $b = Llama::Batch->new(max_tokens => 1);
+        my $ba = Llama::Batch->new(max_tokens => 1);
         $b->set_token(0, $last_tok, $pos, 0);
-        $ctx->decode($b);
-        $b->DESTROY;
+        $ctx->decode($ba);
+        undef $ba;
 
         my $logit_ptr = Llama::_get_logits_ptr($ctx->{ptr});
         my @logits;
@@ -772,7 +772,7 @@ sub embeddings {
     $batch->set_tokens(map { [$tokens[$_], $_, 0] } 0 .. $#tokens);
 
     $ctx->decode($batch);
-    $batch->DESTROY;
+    undef $batch;
 
     $slot->{n_tokens} = scalar @tokens;
     $slot->{state} = 'idle';
@@ -1013,14 +1013,12 @@ sub list_cached_slots {
 
 sub DESTROY {
     my ($self) = @_;
-    if ($self) {
-        for my $m (@{$self->{models}}) {
-            for my $slot (@{$m->{contexts}}) {
-                $slot->{context}->DESTROY if $slot->{context};
-            }
-        }
-        Llama::llama_backend_free();
+    return unless $self;
+    for my $m (@{$self->{models}//[]}) {
+        delete $_->{context} for @{$m->{contexts}//[]};
     }
+    Llama::llama_backend_free();
+    return;
 }
 
 1;
