@@ -10,12 +10,12 @@ sub new {
     my ($class, $model, %opts) = @_;
     return unless defined $model;
     my $ptr = Llama::llama_init_from_model(
-        $model->{ptr},
-        $opts{n_ctx}        || 2048,
-        $opts{n_batch}      || 512,
-        $opts{n_threads}    || 16,
+        $model,
+        $opts{n_ctx}           || 2048,
+        $opts{n_batch}         || 512,
+        $opts{n_threads}       || 16,
         $opts{n_threads_batch} || 16,
-        $opts{embeddings}   || 0,
+        $opts{embeddings}      || 0,
     );
     return bless {
         ptr         => $ptr,

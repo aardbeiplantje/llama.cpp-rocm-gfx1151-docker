@@ -1,13 +1,13 @@
 #define PERL_NO_GET_CONTEXT
+
+#include "EXTERN.h"
+#include "perl.h"
+#include "XSUB.h"
+#define PERLIO_NOT_STDIO 0    /* For co-existence with stdio only */
+#include <perlio.h>           /* Usually via #include <perl.h> */
+
 #include "string.h"
 #include "llama.h"
-
-/* ggml_log_callback type definition */  
-typedef void (*ggml_log_callback)(enum ggml_log_level level, const char * text, void * user_data);
-
-#include <EXTERN.h>
-#include <perl.h>
-#include <XSUB.h>
 
 static llama_token* TLlama_tokens = NULL;
 static int32_t TLlama_token_count = 0;
@@ -17,55 +17,62 @@ static size_t     TLlama_loaded_count = 0;
 
 /* Global storage for Perl log callback code reference */
 static SV *log_cb_sv = NULL;   /* The coderef $cb->($level, $message, $data?) */
+/* ggml_log_callback type definition */  
+typedef void (*ggml_log_callback)(enum ggml_log_level level, const char * text, void * user_data);
+
+
+
+#define THISSvOK(sv)  (sv != NULL && SvROK(sv) && SvOK(SvRV(sv)) && INT2PTR(void *, SvIV(SvRV(sv))) != NULL)
+#define THIS(sv)      INT2PTR(void *, SvIV(SvRV(sv)))
+#define LLM(sv)       ((p_llama_model *)THIS(sv))->llm
+typedef struct {
+  llama_model *llm = NULL;
+} p_llama_model;
 
 /* No-op log callback for disabling logs when no custom handler set */
 static void llama_log_noop(enum ggml_log_level level, const char * text, void * user_data) {
     (void)level; (void)text; (void)user_data;
 }
 
-/* Custom log callback that invokes registered Perl subroutine via eval 
- * Signature: sub my_logger($level, $message, $context_data_optional) { ... }  
- */
 static void llama_log_custom_via_perl(enum ggml_log_level level, const char * text, void * userp) {
-    dTHX;       /* Get current perl interpreter pointer (works because called from XS thread context) */
-    dSP;        /* Declare stack pointer macro needed by PUSHMARK/XPUSHs/etc */
-    
+    dTHX;
+    dSP;
     if (!text || !log_cb_sv || SvTYPE(log_cb_sv) != SVt_PVCV) {
         return;  /* Not initialized or invalid cb - silently ignore */
     }
-    
+
     ENTER;      /* Save old scope state before calling into Perl code */
     SAVETMPS;   /* Mark temporary values to be freed after LEAVE */
-    
+
     PUSHMARK(SP);                            /* Start pushing arguments onto Perl call stack */
     mXPUSHs(newSVpv(text, strlen(text)));    /* Arg1: message string */
     mXPUSHs(newSViv((IV)level));             /* Arg2: log level enum as integer */
-    
+
     PUTBACK;     /* Write back SP so Perl can see our pushed args */
-    
+
     /* Call the stored perl coderef with eval wrapper to catch exceptions */  
     int count = call_sv(log_cb_sv, G_EVAL | G_DISCARD | G_KEEPERR);  /* void return expected
-    
+
     SPAGAIN;     /* Refresh stack pointer after call returns */
     SV *err_tmp = ERRSV;              /* Check $@ for any errors from callback execution */
     if (SvTRUE(err_tmp)) POPs;        /* Pop error value off stack to avoid leak */
-    
+
     FREETMPS;   /* Free temporaries created between ENTER/SAVETMPS and here */  
     LEAVE;      /* Restore old scope state - cleanup done by SAVETMPS/FREETMPS pair above*/
 }
 
-MODULE = Llama            PACKAGE = Llama
+MODULE = Llama            PACKAGE = Llama               PREFIX = L_
+VERSIONCHECK: DISABLE
+PROTOTYPES: DISABLE
 
-# ============================================================================
-# Lifecycle / Logging Control  
-# ============================================================================
 
 void
-set_log_callback(SV *cb, ...)
+L_set_log_callback(SV *cb, ...)
     PREINIT:
         int items_arg;
     PPCODE:
-        dTHX;   /* Required because this is an XS entry point that may be called from pure Perl code */
+        dTHX;
+        dSP;
 
         /* Validate coderef */
         if (!cb || !SvROK(cb) || SvTYPE(SvRV(cb)) != SVt_PVCV)
@@ -81,8 +88,12 @@ set_log_callback(SV *cb, ...)
         }
         log_cb_sv = svcb;
 
-void llama_backend_init()
-    CODE:
+void
+L_llama_backend_init()
+    PPCODE:
+        dTHX;
+        dSP;
+
         /* Priority order for logging configuration */
         /* 1. Custom Perl callback via set_log_callback() takes highest precedence */  
         if (log_cb_sv) {
@@ -107,7 +118,7 @@ void llama_backend_init()
         llama_backend_init();
 
 void
-llama_backend_free()
+L_llama_backend_free()
     CODE:
         /* Clean up stored callbacks on backend shutdown */
         if (log_cb_sv){
@@ -120,93 +131,150 @@ llama_backend_free()
 # Model loading / freeing
 # ============================================================================
 
-IV
-llama_model_load_from_file(char* path_model)
-    CODE:
-        struct llama_model_params params = llama_model_default_params();
-        params.n_gpu_layers = 999999;
-        llama_model *m = llama_model_load_from_file(path_model, params);
-        if(m == NULL)
+void
+L_llama_model_load_from_file(SV *file=&PL_sv_undef)
+    PPCODE:
+        dTHX;
+        dSP;
+        if(!file || !SvOK(file) || !SvPOK(file))
             XSRETURN_UNDEF;
-        else
-            RETVAL = (IV)m;
-    OUTPUT:
-        RETVAL
-
-IV
-llama_model_load_from_file_mmap(char* path_model)
-    CODE:
+        //printf("MODEL CREATE 0 FILE %s\n", SvPVX(file));
         struct llama_model_params params = llama_model_default_params();
         params.n_gpu_layers = 999999;
         params.use_mmap = true;
-        llama_model *m = llama_model_load_from_file(path_model, params);
-        if(m == NULL)
+        llama_model *m = llama_model_load_from_file(SvPVX(file), params);
+        if(!m)
             XSRETURN_UNDEF;
-        else
-            RETVAL = (IV)m;
-    OUTPUT:
-        RETVAL
+        //printf("MODEL CREATE 1 FILE %s\n", SvPVX(file));
+        void *ptr = NULL;
+        Newxz(ptr, 1, p_llama_model);
+        //printf("MODEL CREATE 1 PTR %p\n", ptr);
+        if(!ptr)
+            XSRETURN_IV(0);
+        SV *sv = sv_newmortal();
+        SvPOK_only(sv);
+        sv_setref_pv(sv, "Llama::Model", ptr);
+        SvREADONLY_on(sv);
+        LLM(sv) = m;
+        ST(0) = sv;
+        XSRETURN(1);
+
 
 void
-llama_model_free(IV model)
-    CODE:
-        llama_model_free((struct llama_model*)model);
+L_llama_model_free(SV *m=NULL)
+    PPCODE:
+        dTHX;
+        dSP;
+        //printf("MODEL FREE 1 %p\n", m);
+        if(!THISSvOK(m))
+            XSRETURN_UNDEF;
+        //printf("MODEL FREE 2a %p\n", THIS(m));
+        if(LLM(m) != NULL){
+            llama_model_free((struct llama_model*)(LLM(m)));
+            //printf("MODEL FREE 2b %p\n", THIS(m));
+        }
+        LLM(m) = NULL;
 
 # ============================================================================
 # Model query functions
 # ============================================================================
 
-IV
-llama_model_n_ctx_train(IV model)
-    CODE:
-        RETVAL = (IV)llama_model_n_ctx_train((const struct llama_model*)model);
-    OUTPUT:
-        RETVAL
+void
+L_llama_model_n_ctx_train(SV *m=NULL)
+    PPCODE:
+        dTHX;
+        dSP;
+        if(!THISSvOK(m))
+            XSRETURN_UNDEF;
+        XSRETURN_IV((IV)llama_model_n_ctx_train(LLM(m)));
+
+void
+L_llama_model_n_embd(SV *m=NULL)
+    PPCODE:
+        dTHX;
+        dSP;
+        if(!THISSvOK(m))
+            XSRETURN_UNDEF;
+        XSRETURN_IV((IV)llama_model_n_embd(LLM(m)));
+
+void
+L_llama_model_n_layer(SV *m=NULL)
+    PPCODE:
+        dTHX;
+        dSP;
+        if(!THISSvOK(m))
+            XSRETURN_UNDEF;
+        XSRETURN_IV((IV)llama_model_n_layer(LLM(m)));
+
+void
+L_llama_model_n_params(SV *m=NULL)
+    PPCODE:
+        dTHX;
+        dSP;
+        if(!THISSvOK(m))
+            XSRETURN_UNDEF;
+        XSRETURN_IV((UV)llama_model_n_params(LLM(m)));
+
+void
+L_llama_model_size(SV *m=NULL)
+    PPCODE:
+        dTHX;
+        dSP;
+        if(!THISSvOK(m))
+            XSRETURN_UNDEF;
+        XSRETURN_IV((UV)llama_model_size(LLM(m)));
 
 IV
-llama_model_n_embd(IV model)
-    CODE:
-        RETVAL = (IV)llama_model_n_embd((const struct llama_model*)model);
-    OUTPUT:
-        RETVAL
+L_llama_model_desc(SV *m=NULL)
+    PPCODE:
+        dTHX;
+        dSP;
+        if(!THISSvOK(m))
+            XSRETURN_UNDEF;
+        char *buf = NULL;
+        Newxz(buf, 4096, char);
+        if(!buf)
+            XSRETURN_UNDEF;
+        llama_model_desc(LLM(m), (char *)buf, 4096);
 
-IV
-llama_model_n_layer(IV model)
-    CODE:
-        RETVAL = (IV)llama_model_n_layer((const struct llama_model*)model);
-    OUTPUT:
-        RETVAL
+        HV *rh = newHV();
 
-UV
-llama_model_n_params(IV model)
-    CODE:
-        RETVAL = (UV)llama_model_n_params((const struct llama_model*)model);
-    OUTPUT:
-        RETVAL
+        // Parse key-value pairs separated by \0 bytes
+        char *ptr = buf;
+        char *end = buf + 4096;
 
-UV
-llama_model_size(IV model)
-    CODE:
-        RETVAL = (UV)llama_model_size((const struct llama_model*)model);
-    OUTPUT:
-        RETVAL
+        while (ptr < end && *ptr != '\0') {
+            char *key = ptr;
+            STRLEN key_len = strlen(key);
+            ptr += key_len + 1;
 
-IV
-llama_model_desc(IV model, char* buf, IV buf_size)
-    CODE:
-        RETVAL = (IV)llama_model_desc((const struct llama_model*)model, buf, (size_t)buf_size);
-    OUTPUT:
-        RETVAL
+            if (ptr >= end) break; // Safeguard against malformed/truncated buffer
+
+            char *val = ptr;
+            STRLEN val_len = strlen(val);
+            ptr += val_len + 1;
+
+            // Store key-value pair into the Perl Hash
+            hv_store(rh, key, key_len, newSVpvn(val, val_len), 0);
+        }
+
+        // Free allocated memory buffer
+        Safefree(buf);
+
+        // Return the hash reference (use newRV_noinc to avoid leaking the HV reference count)
+        ST(0) = newRV_noinc((SV *)rh);
+        sv_2mortal(ST(0));
+        XSRETURN(1);
 
 const char*
-llama_model_chat_template(IV model, char* name)
+L_llama_model_chat_template(IV model, char* name)
     CODE:
         RETVAL = llama_model_chat_template((const struct llama_model*)model, name);
     OUTPUT:
         RETVAL
 
 SV*
-llama_chat_apply_template(SV* tmpl_sv, SV* messages_sv, bool add_ass)
+L_llama_chat_apply_template(SV* tmpl_sv, SV* messages_sv, bool add_ass)
     PREINIT:
         const char *tmpl;
         AV *messages_av;
@@ -281,9 +349,13 @@ llama_chat_apply_template(SV* tmpl_sv, SV* messages_sv, bool add_ass)
 # Context creation / destruction
 # ============================================================================
 
-IV
-llama_init_from_model(IV model, IV n_ctx, IV n_batch, IV n_threads, IV n_threads_batch, bool embeddings)
-    CODE:
+void
+L_llama_init_from_model(SV *m=NULL, IV n_ctx, IV n_batch, IV n_threads, IV n_threads_batch, bool embeddings)
+    PPCODE:
+        dTHX;
+        dSP;
+        if(!THISSvOK(m))
+            XSRETURN_UNDEF;
         struct llama_context_params params = llama_context_default_params();
         params.n_ctx = (uint32_t)n_ctx;
         params.n_batch = (uint32_t)n_batch;
@@ -292,12 +364,10 @@ llama_init_from_model(IV model, IV n_ctx, IV n_batch, IV n_threads, IV n_threads
         params.n_threads = (int32_t)n_threads;
         params.n_threads_batch = (int32_t)n_threads_batch;
         params.embeddings = embeddings;
-        RETVAL = (IV)llama_init_from_model((struct llama_model*)model, params);
-    OUTPUT:
-        RETVAL
+        XSRETURN_IV((IV)llama_init_from_model(LLM(m), params));
 
 void
-llama_free(IV ctx)
+L_llama_free(IV ctx)
     CODE:
         llama_free((struct llama_context*)ctx);
 
@@ -306,21 +376,21 @@ llama_free(IV ctx)
 # ============================================================================
 
 IV
-llama_n_ctx(IV ctx)
+L_llama_n_ctx(IV ctx)
     CODE:
         RETVAL = (IV)llama_n_ctx((const struct llama_context*)ctx);
     OUTPUT:
         RETVAL
 
 IV
-llama_n_batch(IV ctx)
+L_llama_n_batch(IV ctx)
     CODE:
         RETVAL = (IV)llama_n_batch((const struct llama_context*)ctx);
     OUTPUT:
         RETVAL
 
 IV
-llama_n_seq_max(IV ctx)
+L_llama_n_seq_max(IV ctx)
     CODE:
         RETVAL = (IV)llama_n_seq_max((const struct llama_context*)ctx);
     OUTPUT:
@@ -331,7 +401,7 @@ llama_n_seq_max(IV ctx)
 # ============================================================================
 
 IV
-llama_batch_init(IV n_tokens, IV embd, IV n_seq_max)
+L_llama_batch_init(IV n_tokens, IV embd, IV n_seq_max)
     CODE:
         struct llama_batch batch = llama_batch_init((int32_t)n_tokens, (int32_t)embd, (int32_t)n_seq_max);
         RETVAL = (IV)malloc(sizeof(struct llama_batch));
@@ -340,7 +410,7 @@ llama_batch_init(IV n_tokens, IV embd, IV n_seq_max)
         RETVAL
 
 void
-llama_batch_free(IV batch)
+L_llama_batch_free(IV batch)
     CODE:
         llama_batch_free(*(struct llama_batch*)batch);
         free((void*)batch);
@@ -350,13 +420,13 @@ llama_batch_free(IV batch)
 # ============================================================================
 
 void
-llama_batch_set_n_tokens(IV batch, IV n_tokens)
+L_llama_batch_set_n_tokens(IV batch, IV n_tokens)
     CODE:
         struct llama_batch* b = (struct llama_batch*)batch;
         b->n_tokens = (int32_t)n_tokens;
 
 void
-llama_batch_set_token(IV batch, IV idx, IV token, IV pos, SV* seq_id_sv)
+L_llama_batch_set_token(IV batch, IV idx, IV token, IV pos, SV* seq_id_sv)
     CODE:
         struct llama_batch* b = (struct llama_batch*)batch;
         IV n_seq = 0;
@@ -381,14 +451,14 @@ llama_batch_set_token(IV batch, IV idx, IV token, IV pos, SV* seq_id_sv)
 # ============================================================================
 
 IV
-llama_decode(IV ctx, IV batch)
+L_llama_decode(IV ctx, IV batch)
     CODE:
         RETVAL = (IV)llama_decode((struct llama_context*)ctx, *(struct llama_batch*)batch);
     OUTPUT:
         RETVAL
 
 IV
-llama_encode(IV ctx, IV batch)
+L_llama_encode(IV ctx, IV batch)
     CODE:
         RETVAL = (IV)llama_encode((struct llama_context*)ctx, *(struct llama_batch*)batch);
     OUTPUT:
@@ -399,7 +469,7 @@ llama_encode(IV ctx, IV batch)
 # ============================================================================
 
 float*
-llama_get_logits(IV ctx)
+L_llama_get_logits(IV ctx)
     CODE:
         RETVAL = llama_get_logits((struct llama_context*)ctx);
     OUTPUT:
@@ -410,7 +480,7 @@ llama_get_logits(IV ctx)
 # ============================================================================
 
 NV
-llama_get_logits_ith(IV ctx, IV i)
+L_llama_get_logits_ith(IV ctx, IV i)
     CODE:
         float* logits = llama_get_logits_ith((struct llama_context*)ctx, (int32_t)i);
         RETVAL = logits ? (NV)logits[0] : 0.0;
@@ -422,7 +492,7 @@ llama_get_logits_ith(IV ctx, IV i)
 # ============================================================================
 
 float*
-llama_get_embeddings(IV ctx)
+L_llama_get_embeddings(IV ctx)
     CODE:
         RETVAL = llama_get_embeddings((struct llama_context*)ctx);
     OUTPUT:
@@ -433,7 +503,7 @@ llama_get_embeddings(IV ctx)
 # ============================================================================
 
 IV
-llama_tokenize(IV vocab, SV* text, IV max_tokens, bool add_special, bool parse_special)
+L_llama_tokenize(IV vocab, SV* text, IV max_tokens, bool add_special, bool parse_special)
     CODE:
         if (TLlama_tokens) free(TLlama_tokens);
         TLlama_text_len = 0;
@@ -453,7 +523,7 @@ llama_tokenize(IV vocab, SV* text, IV max_tokens, bool add_special, bool parse_s
         RETVAL
 
 IV
-llama_tokenize_get_token(IV idx)
+L_llama_tokenize_get_token(IV idx)
     CODE:
         int32_t i = (int32_t)idx;
         if (!TLlama_tokens || i < 0 || i >= TLlama_token_count) {
@@ -465,7 +535,7 @@ llama_tokenize_get_token(IV idx)
         RETVAL
 
 void
-llama_tokenize_free()
+L_llama_tokenize_free()
     CODE:
         free(TLlama_tokens);
         TLlama_tokens = NULL;
@@ -476,7 +546,7 @@ llama_tokenize_free()
 # ============================================================================
 
 IV
-llama_token_to_piece(IV vocab, IV token, char* buf, IV buf_len, IV lstrip, bool special)
+L_llama_token_to_piece(IV vocab, IV token, char* buf, IV buf_len, IV lstrip, bool special)
     CODE:
         RETVAL = (IV)llama_token_to_piece((const struct llama_vocab*)vocab, (llama_token)token, buf, (int32_t)buf_len, (int32_t)lstrip, special);
     OUTPUT:
@@ -487,7 +557,7 @@ llama_token_to_piece(IV vocab, IV token, char* buf, IV buf_len, IV lstrip, bool 
 # ============================================================================
 
 IV
-llama_detokenize(IV vocab, IV* tokens, IV n_tokens, char* buf, IV buf_len, bool remove_special, bool unparse_special)
+L_llama_detokenize(IV vocab, IV* tokens, IV n_tokens, char* buf, IV buf_len, bool remove_special, bool unparse_special)
     CODE:
         RETVAL = (IV)llama_detokenize((const struct llama_vocab*)vocab, (const llama_token*)tokens, (int32_t)n_tokens, buf, (int32_t)buf_len, remove_special, unparse_special);
     OUTPUT:
@@ -498,35 +568,35 @@ llama_detokenize(IV vocab, IV* tokens, IV n_tokens, char* buf, IV buf_len, bool 
 # ============================================================================
 
 IV
-llama_vocab_n_tokens(IV vocab)
+L_llama_vocab_n_tokens(IV vocab)
     CODE:
         RETVAL = (IV)llama_vocab_n_tokens((const struct llama_vocab*)vocab);
     OUTPUT:
         RETVAL
 
 llama_token
-llama_vocab_bos(IV vocab)
+L_llama_vocab_bos(IV vocab)
     CODE:
         RETVAL = llama_vocab_bos((const struct llama_vocab*)vocab);
     OUTPUT:
         RETVAL
 
 llama_token
-llama_vocab_eos(IV vocab)
+L_llama_vocab_eos(IV vocab)
     CODE:
         RETVAL = llama_vocab_eos((const struct llama_vocab*)vocab);
     OUTPUT:
         RETVAL
 
 llama_token
-llama_vocab_eot(IV vocab)
+L_llama_vocab_eot(IV vocab)
     CODE:
         RETVAL = llama_vocab_eot((const struct llama_vocab*)vocab);
     OUTPUT:
         RETVAL
 
 llama_token
-llama_vocab_nl(IV vocab)
+L_llama_vocab_nl(IV vocab)
     CODE:
         RETVAL = llama_vocab_nl((const struct llama_vocab*)vocab);
     OUTPUT:
@@ -537,35 +607,35 @@ llama_vocab_nl(IV vocab)
 # ============================================================================
 
 IV
-llama_sampler_init_greedy()
+L_llama_sampler_init_greedy()
     CODE:
         RETVAL = (IV)llama_sampler_init_greedy();
     OUTPUT:
         RETVAL
 
 IV
-llama_sampler_init_top_k(IV k)
+L_llama_sampler_init_top_k(IV k)
     CODE:
         RETVAL = (IV)llama_sampler_init_top_k((int32_t)k);
     OUTPUT:
         RETVAL
 
 IV
-llama_sampler_init_top_p(NV p, IV min_keep)
+L_llama_sampler_init_top_p(NV p, IV min_keep)
     CODE:
         RETVAL = (IV)llama_sampler_init_top_p((float)p, (size_t)min_keep);
     OUTPUT:
         RETVAL
 
 IV
-llama_sampler_init_temp(NV t)
+L_llama_sampler_init_temp(NV t)
     CODE:
         RETVAL = (IV)llama_sampler_init_temp((float)t);
     OUTPUT:
         RETVAL
 
 IV
-llama_sampler_init_dist(IV seed)
+L_llama_sampler_init_dist(IV seed)
     CODE:
         RETVAL = (IV)llama_sampler_init_dist((uint32_t)seed);
     OUTPUT:
@@ -576,7 +646,7 @@ llama_sampler_init_dist(IV seed)
 # ============================================================================
 
 IV
-llama_sampler_chain_init()
+L_llama_sampler_chain_init()
     CODE:
         struct llama_sampler_chain_params params = llama_sampler_chain_default_params();
         RETVAL = (IV)llama_sampler_chain_init(params);
@@ -584,31 +654,31 @@ llama_sampler_chain_init()
         RETVAL
 
 void
-llama_sampler_chain_add(IV chain, IV sampler)
+L_llama_sampler_chain_add(IV chain, IV sampler)
     CODE:
         llama_sampler_chain_add((struct llama_sampler*)chain, (struct llama_sampler*)sampler);
 
 IV
-llama_sampler_chain_get(IV chain, IV i)
+L_llama_sampler_chain_get(IV chain, IV i)
     CODE:
         RETVAL = (IV)llama_sampler_chain_get((struct llama_sampler*)chain, (int32_t)i);
     OUTPUT:
         RETVAL
 
 IV
-llama_sampler_chain_n(IV chain)
+L_llama_sampler_chain_n(IV chain)
     CODE:
         RETVAL = (IV)llama_sampler_chain_n((const struct llama_sampler*)chain);
     OUTPUT:
         RETVAL
 
 void
-llama_sampler_free(IV sampler)
+L_llama_sampler_free(IV sampler)
     CODE:
         llama_sampler_free((struct llama_sampler*)sampler);
 
 void
-llama_sampler_chain_free(IV chain)
+L_llama_sampler_chain_free(IV chain)
     CODE:
         llama_sampler_free((struct llama_sampler*)chain);
 
@@ -617,14 +687,14 @@ llama_sampler_chain_free(IV chain)
 # ============================================================================
 
 llama_token
-llama_sampler_sample(IV sampler, IV ctx, IV idx)
+L_llama_sampler_sample(IV sampler, IV ctx, IV idx)
     CODE:
         RETVAL = llama_sampler_sample((struct llama_sampler*)sampler, (struct llama_context*)ctx, (int32_t)idx);
     OUTPUT:
         RETVAL
 
 void
-llama_sampler_reset(IV sampler)
+L_llama_sampler_reset(IV sampler)
     CODE:
         llama_sampler_reset((struct llama_sampler*)sampler);
 
@@ -633,7 +703,7 @@ llama_sampler_reset(IV sampler)
 # ============================================================================
 
 NV
-llama_perf_context_load_ms(IV ctx)
+L_llama_perf_context_load_ms(IV ctx)
     CODE:
         struct llama_perf_context_data data = llama_perf_context((const struct llama_context*)ctx);
         RETVAL = data.t_load_ms;
@@ -641,7 +711,7 @@ llama_perf_context_load_ms(IV ctx)
         RETVAL
 
 NV
-llama_perf_context_eval_ms(IV ctx)
+L_llama_perf_context_eval_ms(IV ctx)
     CODE:
         struct llama_perf_context_data data = llama_perf_context((const struct llama_context*)ctx);
         RETVAL = data.t_eval_ms;
@@ -649,7 +719,7 @@ llama_perf_context_eval_ms(IV ctx)
         RETVAL
 
 void
-llama_perf_context_reset(IV ctx)
+L_llama_perf_context_reset(IV ctx)
     CODE:
         llama_perf_context_reset((struct llama_context*)ctx);
 
@@ -657,19 +727,21 @@ llama_perf_context_reset(IV ctx)
 # Model → vocab query
 # ============================================================================
 
-IV
-llama_model_get_vocab(IV model)
-    CODE:
-        RETVAL = (IV)(IV)llama_model_get_vocab((const struct llama_model*)model);
-    OUTPUT:
-        RETVAL
+void
+L_llama_model_get_vocab(SV *m=NULL)
+    PPCODE:
+        dTHX;
+        dSP;
+        if(!THISSvOK(m))
+            XSRETURN_UNDEF;
+        XSRETURN_IV((IV)llama_model_get_vocab(LLM(m)));
 
 # ============================================================================
 # Context → model query
 # ============================================================================
 
 IV
-llama_get_model(IV ctx)
+L_llama_get_model(IV ctx)
     CODE:
         RETVAL = (IV)(IV)llama_get_model((const struct llama_context*)ctx);
     OUTPUT:
@@ -680,7 +752,7 @@ llama_get_model(IV ctx)
 # ============================================================================
 
 UV
-llama_state_get_size(IV ctx)
+L_llama_state_get_size(IV ctx)
     CODE:
         RETVAL = (UV)llama_state_get_size((struct llama_context*)ctx);
     OUTPUT:
@@ -691,7 +763,7 @@ llama_state_get_size(IV ctx)
 # ============================================================================
 
 SV*
-llama_state_get_data(IV ctx)
+L_llama_state_get_data(IV ctx)
     CODE:
         size_t size = llama_state_get_size((struct llama_context*)ctx);
         uint8_t* buf = (uint8_t*)malloc(size);
@@ -706,7 +778,7 @@ llama_state_get_data(IV ctx)
 # ============================================================================
 
 UV
-llama_state_set_data(IV ctx, SV* data_sv)
+L_llama_state_set_data(IV ctx, SV* data_sv)
     CODE:
         STRLEN len;
         char* data = SvPV(data_sv, len);
@@ -719,7 +791,7 @@ llama_state_set_data(IV ctx, SV* data_sv)
 # ============================================================================
 
 bool
-llama_state_save_file(IV ctx, SV* path_sv, SV* tokens_sv)
+L_llama_state_save_file(IV ctx, SV* path_sv, SV* tokens_sv)
     CODE:
         STRLEN path_len;
         char* path = SvPV(path_sv, path_len);
@@ -745,7 +817,7 @@ llama_state_save_file(IV ctx, SV* path_sv, SV* tokens_sv)
 # ============================================================================
 
 bool
-llama_state_load_file(IV ctx, SV* path_sv, IV capacity)
+L_llama_state_load_file(IV ctx, SV* path_sv, IV capacity)
     CODE:
         STRLEN path_len;
         char* path = SvPV(path_sv, path_len);
@@ -758,21 +830,21 @@ llama_state_load_file(IV ctx, SV* path_sv, IV capacity)
         RETVAL
 
 IV
-llama_state_load_file_count()
+L_llama_state_load_file_count()
     CODE:
         RETVAL = (IV)TLlama_loaded_count;
     OUTPUT:
         RETVAL
 
 void
-llama_state_load_file_free()
+L_llama_state_load_file_free()
     CODE:
         free(TLlama_loaded_tokens);
         TLlama_loaded_tokens = NULL;
         TLlama_loaded_count = 0;
 
 IV
-llama_state_load_file_token(IV idx)
+L_llama_state_load_file_token(IV idx)
     CODE:
         int32_t i = (int32_t)idx;
         if (!TLlama_loaded_tokens || i < 0 || (size_t)i >= TLlama_loaded_count) {
@@ -788,7 +860,7 @@ llama_state_load_file_token(IV idx)
 # ============================================================================
 
 UV
-llama_state_seq_get_size(IV ctx, IV seq_id)
+L_llama_state_seq_get_size(IV ctx, IV seq_id)
     CODE:
         RETVAL = (UV)llama_state_seq_get_size((struct llama_context*)ctx, (llama_seq_id)seq_id);
     OUTPUT:
@@ -799,7 +871,7 @@ llama_state_seq_get_size(IV ctx, IV seq_id)
 # ============================================================================
 
 SV*
-llama_state_seq_get_data(IV ctx, IV seq_id)
+L_llama_state_seq_get_data(IV ctx, IV seq_id)
     CODE:
         size_t size = llama_state_seq_get_size((struct llama_context*)ctx, (llama_seq_id)seq_id);
         uint8_t* buf = (uint8_t*)malloc(size);
@@ -814,7 +886,7 @@ llama_state_seq_get_data(IV ctx, IV seq_id)
 # ============================================================================
 
 UV
-llama_state_seq_set_data(IV ctx, SV* data_sv, IV seq_id)
+L_llama_state_seq_set_data(IV ctx, SV* data_sv, IV seq_id)
     CODE:
         STRLEN len;
         char* data = SvPV(data_sv, len);
@@ -827,7 +899,7 @@ llama_state_seq_set_data(IV ctx, SV* data_sv, IV seq_id)
 # ============================================================================
 
 UV
-llama_state_seq_save_file(IV ctx, SV* path_sv, IV seq_id, SV* tokens_sv)
+L_llama_state_seq_save_file(IV ctx, SV* path_sv, IV seq_id, SV* tokens_sv)
     CODE:
         STRLEN path_len;
         char* path = SvPV(path_sv, path_len);
@@ -853,7 +925,7 @@ llama_state_seq_save_file(IV ctx, SV* path_sv, IV seq_id, SV* tokens_sv)
 # ============================================================================
 
 bool
-llama_state_seq_load_file(IV ctx, SV* path_sv, IV seq_id, IV capacity)
+L_llama_state_seq_load_file(IV ctx, SV* path_sv, IV seq_id, IV capacity)
     CODE:
         STRLEN path_len;
         char* path = SvPV(path_sv, path_len);
@@ -866,21 +938,21 @@ llama_state_seq_load_file(IV ctx, SV* path_sv, IV seq_id, IV capacity)
         RETVAL
 
 IV
-llama_state_seq_load_file_count()
+L_llama_state_seq_load_file_count()
     CODE:
         RETVAL = (IV)TLlama_loaded_count;
     OUTPUT:
         RETVAL
 
 void
-llama_state_seq_load_file_free()
+L_llama_state_seq_load_file_free()
     CODE:
         free(TLlama_loaded_tokens);
         TLlama_loaded_tokens = NULL;
         TLlama_loaded_count = 0;
 
 IV
-llama_state_seq_load_file_token(IV idx)
+L_llama_state_seq_load_file_token(IV idx)
     CODE:
         int32_t i = (int32_t)idx;
         if (!TLlama_loaded_tokens || i < 0 || (size_t)i >= TLlama_loaded_count) {
@@ -896,7 +968,7 @@ llama_state_seq_load_file_token(IV idx)
 # ============================================================================
 
 UV
-llama_state_seq_get_size_ext(IV ctx, IV seq_id, IV flags)
+L_llama_state_seq_get_size_ext(IV ctx, IV seq_id, IV flags)
     CODE:
         RETVAL = (UV)llama_state_seq_get_size_ext((struct llama_context*)ctx, (llama_seq_id)seq_id, (llama_state_seq_flags)flags);
     OUTPUT:
@@ -907,7 +979,7 @@ llama_state_seq_get_size_ext(IV ctx, IV seq_id, IV flags)
 # ============================================================================
 
 SV*
-llama_state_seq_get_data_ext(IV ctx, IV seq_id, IV flags)
+L_llama_state_seq_get_data_ext(IV ctx, IV seq_id, IV flags)
     CODE:
         size_t size = llama_state_seq_get_size_ext((struct llama_context*)ctx, (llama_seq_id)seq_id, (llama_state_seq_flags)flags);
         uint8_t* buf = (uint8_t*)malloc(size);
@@ -922,7 +994,7 @@ llama_state_seq_get_data_ext(IV ctx, IV seq_id, IV flags)
 # ============================================================================
 
 UV
-llama_state_seq_set_data_ext(IV ctx, SV* data_sv, IV seq_id, IV flags)
+L_llama_state_seq_set_data_ext(IV ctx, SV* data_sv, IV seq_id, IV flags)
     CODE:
         STRLEN len;
         char* data = SvPV(data_sv, len);
@@ -935,7 +1007,7 @@ llama_state_seq_set_data_ext(IV ctx, SV* data_sv, IV seq_id, IV flags)
 # ============================================================================
 
 IV
-llama_get_memory(IV ctx)
+L_llama_get_memory(IV ctx)
     CODE:
         RETVAL = (IV)llama_get_memory((const struct llama_context*)ctx);
     OUTPUT:
@@ -946,7 +1018,7 @@ llama_get_memory(IV ctx)
 # ============================================================================
 
 void
-llama_memory_clear(IV mem, bool data)
+L_llama_memory_clear(IV mem, bool data)
     CODE:
         llama_memory_clear((llama_memory_t)mem, data);
 
@@ -955,7 +1027,7 @@ llama_memory_clear(IV mem, bool data)
 # ============================================================================
 
 bool
-llama_memory_seq_rm(IV mem, IV seq_id, IV p0, IV p1)
+L_llama_memory_seq_rm(IV mem, IV seq_id, IV p0, IV p1)
     CODE:
         RETVAL = llama_memory_seq_rm((llama_memory_t)mem, (llama_seq_id)seq_id, (llama_pos)p0, (llama_pos)p1);
     OUTPUT:
@@ -966,7 +1038,7 @@ llama_memory_seq_rm(IV mem, IV seq_id, IV p0, IV p1)
 # ============================================================================
 
 void
-llama_memory_seq_cp(IV mem, IV seq_id_src, IV seq_id_dst, IV p0, IV p1)
+L_llama_memory_seq_cp(IV mem, IV seq_id_src, IV seq_id_dst, IV p0, IV p1)
     CODE:
         llama_memory_seq_cp((llama_memory_t)mem, (llama_seq_id)seq_id_src, (llama_seq_id)seq_id_dst, (llama_pos)p0, (llama_pos)p1);
 
@@ -975,7 +1047,7 @@ llama_memory_seq_cp(IV mem, IV seq_id_src, IV seq_id_dst, IV p0, IV p1)
 # ============================================================================
 
 void
-llama_memory_seq_keep(IV mem, IV seq_id)
+L_llama_memory_seq_keep(IV mem, IV seq_id)
     CODE:
         llama_memory_seq_keep((llama_memory_t)mem, (llama_seq_id)seq_id);
 
@@ -984,7 +1056,7 @@ llama_memory_seq_keep(IV mem, IV seq_id)
 # ============================================================================
 
 void
-llama_memory_seq_add(IV mem, IV seq_id, IV p0, IV p1, IV delta)
+L_llama_memory_seq_add(IV mem, IV seq_id, IV p0, IV p1, IV delta)
     CODE:
         llama_memory_seq_add((llama_memory_t)mem, (llama_seq_id)seq_id, (llama_pos)p0, (llama_pos)p1, (llama_pos)delta);
 
@@ -993,7 +1065,7 @@ llama_memory_seq_add(IV mem, IV seq_id, IV p0, IV p1, IV delta)
 # ============================================================================
 
 void
-llama_memory_seq_div(IV mem, IV seq_id, IV p0, IV p1, IV d)
+L_llama_memory_seq_div(IV mem, IV seq_id, IV p0, IV p1, IV d)
     CODE:
         llama_memory_seq_div((llama_memory_t)mem, (llama_seq_id)seq_id, (llama_pos)p0, (llama_pos)p1, (int)d);
 
@@ -1002,7 +1074,7 @@ llama_memory_seq_div(IV mem, IV seq_id, IV p0, IV p1, IV d)
 # ============================================================================
 
 IV
-llama_memory_seq_pos_min(IV mem, IV seq_id)
+L_llama_memory_seq_pos_min(IV mem, IV seq_id)
     CODE:
         RETVAL = (IV)llama_memory_seq_pos_min((llama_memory_t)mem, (llama_seq_id)seq_id);
     OUTPUT:
@@ -1013,7 +1085,7 @@ llama_memory_seq_pos_min(IV mem, IV seq_id)
 # ============================================================================
 
 IV
-llama_memory_seq_pos_max(IV mem, IV seq_id)
+L_llama_memory_seq_pos_max(IV mem, IV seq_id)
     CODE:
         RETVAL = (IV)llama_memory_seq_pos_max((llama_memory_t)mem, (llama_seq_id)seq_id);
     OUTPUT:
@@ -1024,7 +1096,7 @@ llama_memory_seq_pos_max(IV mem, IV seq_id)
 # ============================================================================
 
 bool
-llama_memory_can_shift(IV mem)
+L_llama_memory_can_shift(IV mem)
     CODE:
         RETVAL = llama_memory_can_shift((llama_memory_t)mem);
     OUTPUT:
