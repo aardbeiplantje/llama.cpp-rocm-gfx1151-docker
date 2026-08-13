@@ -6,3 +6,6 @@
 [submodule "minijinja"]
 	path = minijinja  
 	url = https://github.com/mitsuhiko/minijinja.git	
+[submodule "rocmfp4-llama"]
+	path = rocmfp4-llama
+	url = git@github.com:aardbeiplantje/rocmfp4-llama.git
