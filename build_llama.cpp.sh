@@ -73,8 +73,8 @@ cmake \
     -DGGML_HIP_ROCWMMA_FATTN=ON \
     -DGGML_HIP_FORCE_WMM_REDUCE=ON \
     \
-    `# === Flash Attention Optimizations ===` \
-    -DGGML_HIP_FATTN=ON \
+    `# === ROCm FP4 (gfx1151) ===` \
+    -DGGML_USE_ROCMFP4=ON \
     -DGGML_CUDA_FA_ALL_QUANTS=ON \
     \
     `# === MMQ (Matrix Multiply Quantized) Configuration ===` \
