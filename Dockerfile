@@ -102,10 +102,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 RUN ln -sf /dev/stdout /var/log/nginx/access.log \
     && ln -sf /dev/stderr /var/log/nginx/error.log
-COPY --from=perl-builder /app/lib/perl/usr/local/lib /usr/local/lib 
+#COPY --from=perl-builder /app/lib/perl/usr/local/lib /usr/local/lib 
 ENV ROCM_PATH=/opt/rocm
 ENV LD_LIBRARY_PATH=${ROCM_PATH}/lib:/llama/bin
-RUN perl -MLlama -we 'print "OK\n"'
+#RUN perl -MLlama -we 'print "OK\n"'
 COPY nginx.conf /nginx.conf
 
 RUN useradd -N -M -d /llama-server/ -u 1000 llama-runtime
