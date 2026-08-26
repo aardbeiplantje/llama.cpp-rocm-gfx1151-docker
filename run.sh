@@ -46,8 +46,8 @@ done
 
 # Now run
 exec docker run \
+    --restart=always \
     --name $D \
-    --rm \
     --network=host \
     --ulimit memlock=-1:-1 \
     --ulimit stack=67108864:67108864 \
