@@ -59,7 +59,6 @@ RUN \
 
 FROM base AS perl-builder
 WORKDIR /llama-perl
-ARG W=rocmfp4-llama
 COPY --from=builder /llama-build/llama.cpp /llama.cpp
 COPY --from=builder /llama /llama
 COPY Llama /llama-perl/Llama
