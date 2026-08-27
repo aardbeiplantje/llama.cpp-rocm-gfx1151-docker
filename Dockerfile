@@ -31,7 +31,7 @@ RUN apt update && apt install -y --no-install-recommends \
 # ADD https://therock-nightly-tarball.s3.amazonaws.com/therock-dist-linux-gfx1151-7.13.0a20260515.tar.gz /tmp/rocm.tar.gz
 # hence: curl
 RUN --mount=type=cache,target=/var/cache/downloads \
-    curl -qsSk -L https://therock-nightly-tarball.s3.amazonaws.com/therock-dist-linux-gfx1151-7.13.0a20260515.tar.gz \
+    curl -qsSk -L https://therock-nightly-tarball.s3.amazonaws.com/therock-dist-linux-gfx1151-7.14.0a20260612.tar.gz \
         -z file -o /var/cache/downloads/rocm.tar.gz
 RUN --mount=type=cache,target=/var/cache/downloads \
     cp /var/cache/downloads/rocm.tar.gz /rocm.tar.gz
@@ -43,6 +43,7 @@ COPY --from=base /rocm.tar.gz /
 RUN mkdir -p /opt/rocm \
     && tar -xzf /rocm.tar.gz -C /opt/rocm \
     && rm -f /rocm.tar.gz
+ARG CACHEBUST=1
 RUN git clone --depth=1 --single-branch -b nemotron-mtp-rocmfp4-strix https://github.com/aardbeiplantje/rocmfp4-llama.git rocmfp4-llama.cpp.git
 RUN git clone --depth=1 --single-branch -b master https://github.com/ggml-org/llama.cpp.git llama.cpp.git
 ENV ROCM_PATH=/opt/rocm

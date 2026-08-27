@@ -74,7 +74,6 @@ case "$SUBCMD" in
             --log-colors on \
             -fit off \
             --embeddings \
-            --mlock \
             --split-mode none \
             --no-webui \
             --host /tmp/llama.sock \
@@ -97,9 +96,7 @@ case "$SUBCMD" in
             --top-p 0 \
             --min-p 0 \
             --color on \
-            --no-mmap \
             --no-warmup \
-            --mlock \
             -ngl 999 \
             --flash-attn on \
             -b 2048 \
@@ -126,9 +123,7 @@ case "$SUBCMD" in
             --top-p 0 \
             --min-p 0 \
             --color on \
-            --no-mmap \
             --no-warmup \
-            --mlock \
             -ngl 999 \
             --flash-attn on \
             -b 2048 \
