@@ -1,4 +1,4 @@
-# AGENTS.md
+# LLAMA_ROCMFP4.md
 
 ## Repo structure
 
@@ -66,14 +66,40 @@ The following fixes were applied to make ROCmFP4 work like in `rocmfp4-llama` su
 - **Problem**: MTP (NextN) tensors skipped when `load_mtp=false` (default), causing "unused tensor" warnings
 - **Fix**: Changed `mtp_flags` from `!ml.load_mtp ? TENSOR_SKIP : 0` to always `0` (required for qwen35 models)
 
-### 3. Build verification
+### 3. Gated Delta Net kernel (`ggml/src/ggml-cuda/gated_delta_net.cu`)
+- **Problem**: llama.cpp had a refactored kernel with different signature (`state_slot_stride`, separate `state` pointer) that lacked HIP backend implementation
+- **Fix**: Replaced with working rocmfp4-llama version (simpler signature, working HIP build)
+- **Files**: `ggml/src/ggml-cuda/gated_delta_net.cu`, `ggml/src/ggml-cuda/gated_delta_net.cuh`
+- **Added**: `ggml_cuda_op_gated_delta_net_fused_cache` fallback implementation
+
+### 4. Build verification
 ```bash
 cd llama.cpp && ROCM_PATH=/opt/rocm bash ../build_llama.cpp.sh
 LLAMA_CPP_DIR=llama.cpp/build bash llama.sh completion --model Qwen3.5-4B-ROCMFP4.gguf --prompt "2+2=?" --perf -n 100 --reasoning off --temp 0.7 --top-p 0.9 --jinja
 ```
 
-### Known limitation
-Qwen3.5-4B-ROCMFP4.gguf (qwen35 arch with recurrent/MTP layers) still produces garbled output in llama.cpp due to API divergence from rocmfp4-llama's working qwen35.cpp. The `rocmfp4-llama` submodule (branch `nemotron-mtp-rocmfp4-strix`) has the working implementation.
+## Current Status (as of 2026-08-28)
+
+| Model | Status |
+|-------|--------|
+| Qwen3-0.6B-Q8_0.gguf | ✅ Works correctly |
+| Qwen3.5-4B-ROCMFP4.gguf | ❌ Garbled output (qwen35 arch with recurrent/MTP layers) |
+
+**Known limitation**: Qwen3.5-4B-ROCMFP4.gguf (qwen35 arch with recurrent/MTP layers) still produces garbled output in llama.cpp due to API divergence from rocmfp4-llama's working qwen35.cpp. The `rocmfp4-llama` submodule (branch `nemotron-mtp-rocmfp4-strix`) has the working implementation.
+
+**Investigation done**:
+- Recurrent layer detection confirmed correct (layers 0-2,4-6,8-10,12-14,16-18,20-22,24-26,28-30 recurrent; 3,7,11,15,19,23,27,31,32 attention)
+- Tensor shapes in `build_layer_attn_linear` and `build_recurrent_attn` look correct
+- Removed `res->t_layer_inp[il] = inpL;` (differed from rocmfp4-llama) - no change
+- Replaced gated_delta_net kernel with rocmfp4-llama working version - no change
+- Using `build_delta_net_fused (AR)` path with `fused_gdn_ar=1, fused_gdn_ch=1`
+
+**Remaining investigation needed**:
+- Check if fused vs autoregressive path differs (rocmfp4-llama uses simpler fused path)
+- Compare `build_delta_net_autoregressive` implementation
+- Verify recurrent state initialization in `build_rs`
+- Check recurrent cache (`ssm_states_all`, `conv_states_all`) zeroing at context creation
+- Debug `ggml_gated_delta_net` kernel output for NaN/Inf
 
 ## HIP Dequantization Implementation Plan (Port from SYCL)
 

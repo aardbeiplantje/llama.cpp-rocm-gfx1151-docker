@@ -26,6 +26,9 @@ variable "DOCKER_TAG" {
 variable "GFX_VERSION" {
   default = "-gfx1151"
 }
+variable "CACHEBUST" {
+  default = "1"
+}
 target "_common" {
   context = "."
   dockerfile = "Dockerfile"
@@ -34,7 +37,7 @@ target "_common" {
   buildkit = true
   target = "runtime"
   args = {
-    CACHEBUST = "1"
+    CACHEBUST = "${CACHEBUST}"
     LEMONADE_LLAMACPP_VERSION = "${LEMONADE_LLAMACPP_VERSION}"
   }
   progress = ["plain", "tty"]
