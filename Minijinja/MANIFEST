@@ -1,7 +1,0 @@
-LICENSE
-Makefile.PL
-README.md
-Minijinja.pm
-t/00-load.t
-t/01-render.t
-typemap
