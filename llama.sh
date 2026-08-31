@@ -31,6 +31,8 @@ export HSA_DISABLE_CRASH_DUMP=1
 export HSA_ENABLE_SDMA=0
 export XDG_CACHE_HOME=/hf
 
+export LLAMA_ATTN_ROT_DISABLE=1
+
 # --- Mode-specific overrides ---
 export ROCBLAS_USE_HIPBLASLT=${ROCBLAS_USE_HIPBLASLT:-0}
 export HSA_ENABLE_SDMA=${HSA_ENABLE_SDMA:-0}
@@ -90,8 +92,8 @@ case "$SUBCMD" in
             -lv 1 \
             --context-shift \
             --jinja \
-            -ctk f16 \
-            -ctv f16 \
+            -ctk q8_0 \
+            -ctv turbo4 \
             --temp 0 \
             --top-p 0 \
             --min-p 0 \
@@ -99,8 +101,8 @@ case "$SUBCMD" in
             --no-warmup \
             -ngl 999 \
             --flash-attn on \
-            -b 2048 \
-            -ub 256 \
+            -b 512 \
+            -ub 64 \
             -t 16 \
             -tb 16 \
             -ctxcp 32 \

@@ -44,9 +44,9 @@ RUN mkdir -p /opt/rocm \
     && tar -xzf /rocm.tar.gz -C /opt/rocm \
     && rm -f /rocm.tar.gz
 ARG CACHEBUST=1
-RUN git clone --depth=1 --single-branch -b nemotron-mtp-rocmfp4-strix https://github.com/aardbeiplantje/rocmfp4-llama.git rocmfp4-llama.cpp.git
-RUN git clone --depth=1 --single-branch -b master https://github.com/ggml-org/llama.cpp.git llama.cpp.git
-RUN git clone --depth=1 --single-branch -b main https://github.com/aardbeiplantje/ROCmFPX.git ROCmFPX.git
+#RUN git clone --depth=1 --single-branch -b nemotron-mtp-rocmfp4-strix https://github.com/aardbeiplantje/rocmfp4-llama.git rocmfp4-llama.cpp.git
+#RUN git clone --depth=1 --single-branch -b master https://github.com/ggml-org/llama.cpp.git llama.cpp.git
+RUN git clone --depth=1 --single-branch -b nemotron-mtp-rocmfp4-strix https://github.com/aardbeiplantje/ROCmFPX.git ROCmFPX.git
 ENV ROCM_PATH=/opt/rocm
 ENV LD_LIBRARY_PATH=${ROCM_PATH}/lib
 ENV PATH=${ROCM_PATH}/bin:$PATH
