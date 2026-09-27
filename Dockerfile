@@ -59,23 +59,6 @@ RUN \
     mv build /llama && \
     rm -rf $W
 
-FROM base AS perl-builder
-WORKDIR /llama-perl
-COPY --from=builder /llama-build/llama.cpp /llama.cpp
-COPY --from=builder /llama /llama
-COPY Llama /llama-perl/Llama
-ARG CACHEBUST=1
-ENV ROCM_PATH=/opt/rocm
-ENV LD_LIBRARY_PATH=${ROCM_PATH}/lib
-RUN \
-    cd /llama-perl/Llama && \
-    ROCM_PATH=/opt/rocm \
-    LLAMA_SRC=/llama.cpp \
-    LLAMA_BUILD=/llama \
-    perl Makefile.PL && \
-    make test && \
-    make install DESTDIR=/app/lib/perl
-
 FROM base AS runtime
 WORKDIR /llama
 COPY --from=base /rocm.tar.gz /
@@ -103,10 +86,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 RUN ln -sf /dev/stdout /var/log/nginx/access.log \
     && ln -sf /dev/stderr /var/log/nginx/error.log
-#COPY --from=perl-builder /app/lib/perl/usr/local/lib /usr/local/lib 
 ENV ROCM_PATH=/opt/rocm
 ENV LD_LIBRARY_PATH=${ROCM_PATH}/lib:/llama/bin
-#RUN perl -MLlama -we 'print "OK\n"'
 COPY nginx.conf /nginx.conf
 
 RUN useradd -N -M -d /llama-server/ -u 1000 llama-runtime
