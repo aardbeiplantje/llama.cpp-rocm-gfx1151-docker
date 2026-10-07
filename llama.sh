@@ -93,7 +93,7 @@ case "$SUBCMD" in
             --context-shift \
             --jinja \
             -ctk q8_0 \
-            -ctv turbo4 \
+            -ctv q8_0 \
             --temp 0 \
             --top-p 0 \
             --min-p 0 \
