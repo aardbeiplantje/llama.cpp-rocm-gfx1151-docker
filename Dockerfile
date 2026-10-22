@@ -59,6 +59,34 @@ RUN \
     mv build /llama && \
     rm -rf $W
 
+# ROCm::Inference (https://github.com/CowboyTim/rocm-hip, the "rocm-hip-src" build context, see docker-bake.hcl):
+# libinference (kernels embedded), the Perl modules ROCm::Inference, Web::Route and Minijinja (with the Rust
+# minijinja C library), and the OpenAI-compatible rocm-inference-server, all under /opt/rocm-hip
+FROM base AS rocm-hip-build
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libperl-dev \
+    rustc \
+    cargo \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+RUN mkdir -p /opt/rocm \
+    && tar -xzf /rocm.tar.gz -C /opt/rocm
+ENV ROCM_PATH=/opt/rocm
+COPY --from=rocm-hip-src . /src/rocm-hip
+WORKDIR /src/rocm-hip
+RUN make -j32 install PREFIX=/opt/rocm-hip
+RUN cd perl-minijinja-xs \
+    && bash scripts/setup-minijinja.sh \
+    && cp minijinja/target/release/libminijinja_cabi.so /opt/rocm-hip/lib/ \
+    && MINIJINJA_RPATH=/opt/rocm-hip/lib perl Makefile.PL INSTALL_BASE=/opt/rocm-hip/perl5 \
+    && make && make install
+RUN cd perl/ROCm-Inference \
+    && ROCM_INFERENCE_PREFIX=/opt/rocm-hip perl Makefile.PL INSTALL_BASE=/opt/rocm-hip/perl5 \
+    && make && make install
+RUN cd perl/Web-Route \
+    && perl Makefile.PL INSTALL_BASE=/opt/rocm-hip/perl5 \
+    && make && make install
+
 FROM base AS runtime
 WORKDIR /llama
 COPY --from=base /rocm.tar.gz /
@@ -70,6 +98,7 @@ RUN mkdir -p /opt/rocm \
         "*/lib/hipblaslt/*" \
     && rm -f /rocm.tar.gz
 COPY --from=builder /llama /llama
+COPY --from=rocm-hip-build /opt/rocm-hip /opt/rocm-hip
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     nginx \
@@ -115,4 +144,5 @@ ENV HF_HUB_ENABLE_HF_TRANSFER=0
 ENV HF_HUB_DISABLE_XET=1
 ENV HF_HUB_CACHE=/hf/hub
 ENV HF_HOME=/hf
+ENV PERL5LIB=/opt/rocm-hip/perl5/lib/perl5
 ENTRYPOINT ["/llama.sh"]

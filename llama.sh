@@ -5,6 +5,7 @@
 #   llama.sh [subcommand] [args...]
 #   llama.sh                          # server (default)
 #   llama.sh cli -m /models/model.gguf
+#   llama.sh rocm-server model.gguf   # ROCm::Inference only, at /rocm/v1/
 #   llama.sh quantize in.gguf out.gguf [quant-type]
 #   llama.sh bench -m /models/model.gguf
 
@@ -48,6 +49,24 @@ LLAMA_QUANTIZE=${LLAMA_CPP_DIR}/bin/llama-quantize
 LLAMA_BENCH=${LLAMA_CPP_DIR}/bin/llama-bench
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:${LLAMA_CPP_DIR}/bin
 
+# --- ROCm::Inference (rocm-hip): rocm-inference-server, one model, OpenAI-compatible, on
+# /tmp/rocm-inference.sock, reached through nginx at /rocm/v1/... ---
+ROCM_HIP=${ROCM_HIP:-/opt/rocm-hip}
+start_rocm_inference() {
+    local model=${ROCM_MODEL:?ROCM_MODEL=<model.gguf> (a path, or a file in /models) is required}
+    [ -f "$model" ] || model=${M_DIR:-/models}/$model
+    # without the kernel-serializing debug switches exported above
+    env -u HIP_LAUNCH_BLOCKING -u AMD_SERIALIZE_KERNEL \
+        PERL5LIB="$ROCM_HIP/perl5/lib/perl5${PERL5LIB:+:$PERL5LIB}" \
+        perl "$ROCM_HIP/perl5/bin/rocm-inference-server" \
+            --model "$model" \
+            --listen /tmp/rocm-inference.sock \
+            --ctx "${ROCM_CTX:-32768}" \
+            ${ROCM_DRAFT:+--draft "$ROCM_DRAFT"} \
+            ${ROCM_STORE:+--store "$ROCM_STORE"} \
+            ${ROCM_ARGS:-} &
+}
+
 # --- Subcommand dispatch ---
 SUBCMD="${1:-server}"
 
@@ -81,8 +100,19 @@ case "$SUBCMD" in
             --host /tmp/llama.sock \
             --timeout 3600 \
             "$@" &
+          # also ROCm::Inference next to it, at /rocm/v1/..., when a model is given
+          [ -n "${ROCM_MODEL:-}" ] && start_rocm_inference
           set -x
           exec /usr/sbin/nginx -c /nginx.conf -g "daemon off;"
+        ;;
+
+    # ---- rocm-server: ROCm::Inference only (no llama-server), at /rocm/v1/... ----
+    rocm-server)
+        shift
+        ROCM_MODEL=${1:-${ROCM_MODEL:-}}
+        start_rocm_inference
+        set -x
+        exec /usr/sbin/nginx -c /nginx.conf -g "daemon off;"
         ;;
 
     # ---- cli: interactive chat ----
@@ -213,6 +243,8 @@ case "$SUBCMD" in
         echo ""
         echo "Subcommands:"
         echo "  (none) / server   Start llama.cpp server (default)"
+        echo "  rocm-server       ROCm::Inference only, at /rocm/v1/ (e.g. llama.sh rocm-server Qwen3.5-4B-ROCMFP4.gguf);"
+        echo "                    with server, ROCM_MODEL=<model.gguf> runs it next to llama-server"
         echo "  cli               Interactive CLI chat (e.g. llama.sh cli -m /models/model.gguf)"
         echo "  quantize          Quantize GGUF to ROCmFP4 (e.g. llama.sh quantize in.gguf out.gguf Q4_0_ROCMFP4_STRIX_LEAN)"
         echo "  bench             Run benchmark suite (e.g. llama.sh bench -m /models/model.gguf)"

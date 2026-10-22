@@ -11,7 +11,8 @@ The ROCm toolchain comes from the AMD "Therock" nightly tarball for gfx1151, dow
 ## Architecture
 
 - **Build stages**: `base` (debian trixie + ROCm) → `builder` (cmake/ninja build of the fork, JOBS=32) → `runtime`. See `build_llama.cpp.sh` for all cmake flags (rocWMMA flash attention, FP4, graph opt, RS/KV GPU offload).
-- **Server runtime**: nginx listens on `[::]:8000` and proxies to `unix:/tmp/llama.sock`. A Lua+Perl request fixup (`lib/perl/llama.pm`) rewrites chat requests before proxying: injects `id_slot`/`conv_id`, converts repeated system messages to user role, strips boilerplate (model ID, env block, MCP/skills/AGENTS instructions) into "Understood." pairs. POST bodies are logged to `/tmp/request-logs/`.
+- **ROCm::Inference** (`rocm-hip-build` stage): builds rocm-hip from the `rocm-hip-src` build context (`ROCM_HIP_CONTEXT`, default `../rocm-hip`; private, hence not cloned) into `/opt/rocm-hip`: `make install` (libinference, kernels embedded), Minijinja (perl-minijinja-xs + the Rust minijinja C library, Debian's rustc/cargo), ROCm::Inference, Web::Route, `bin/rocm-inference-server`. The context and the stage must have different names: a named context replaces a stage of the same name.
+- **Server runtime**: nginx listens on `[::]:8000` and proxies to `unix:/tmp/llama.sock`; `/rocm/` goes to `unix:/tmp/rocm-inference.sock` (rocm-inference-server, prefix stripped, `proxy_buffering off`). A Lua+Perl request fixup (`lib/lua/fixup.lua` -> `lib/perl/llama.pm`, both locations) rewrites chat requests before proxying: injects `id_slot`/`conv_id`, converts repeated system messages to user role, strips boilerplate (model ID, env block, MCP/skills/AGENTS instructions) into "Understood." pairs. POST bodies are logged to `/tmp/request-logs/`.
 - **Entrypoint**: `/llama.sh` dispatches subcommands; default is `server`, which starts llama-server then execs nginx foreground.
 - **Model presets**: `/llamacpp_presets.ini` drives `--models-preset`: global `[*]` defaults plus per-model `.gguf` sections. Server autoloads up to 4 models from `/models`, parallel slots.
 - **Container layout**: `/models` (mounted from `$MODELS_DIR`), `/hf` (HF cache), named volume `llama.cpp-data` at `/llama.cpp` for slot save paths and lookup caches.
@@ -41,7 +42,8 @@ bash litellm.sh
 
 ### llama.sh subcommands (in-container entrypoint)
 
-- `server` (default) — llama-server + nginx; preset-driven autoload, slots with idle-cache
+- `server` (default) — llama-server + nginx; preset-driven autoload, slots with idle-cache; with `ROCM_MODEL` set also rocm-inference-server (at `/rocm/v1/`)
+- `rocm-server [model.gguf]` — rocm-inference-server + nginx only (`ROCM_MODEL`, `ROCM_CTX`, `ROCM_DRAFT`, `ROCM_STORE`, `ROCM_ARGS`); started without `HIP_LAUNCH_BLOCKING` / `AMD_SERIALIZE_KERNEL`
 - `cli` / `completion` — interactive chat (jinja, flash-attn, q8_0/turbo4 KV caches)
 - `quantize in.gguf out.gguf [type]` — default quant type `Q4_0_ROCMFP4_STRIX_LEAN` (~4.38 BPW)
 - `bench [args]` — no args runs the full suite (pp sizes, tg batches, mixed workloads, long-context stress); bench mode forces `ROCBLAS_USE_HIPBLASLT=1 HSA_ENABLE_SDMA=1 GGML_HIP_GRAPHS=1`

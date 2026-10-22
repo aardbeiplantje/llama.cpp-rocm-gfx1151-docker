@@ -6,6 +6,10 @@ HERE="${HERE%/*}"
 # Switch case?
 DOCKER_OPTS=${DOCKER_OPTS:-""}
 case "${1:-}" in
+    rocm-server)
+        D=llama
+        DOCKER_OPTS="$DOCKER_OPTS -d"
+        ;;
     quantize|cli|bench)
         D=$LOGNAME-${1}
         DOCKER_OPTS="$DOCKER_OPTS -it"
@@ -85,6 +89,11 @@ exec docker run \
     -e GGML_HIP_ALLOC_GRAPH_RESERVE=${GGML_HIP_ALLOC_GRAPH_RESERVE:-2048} \
     -e HSA_FORCE_FINE_GRAIN_PCIE=${HSA_FORCE_FINE_GRAIN_PCIE:-1} \
     -e HSA_ENABLE_SDMA=${HSA_ENABLE_SDMA:-0} \
+    -e ROCM_MODEL=${ROCM_MODEL:-} \
+    -e ROCM_CTX=${ROCM_CTX:-32768} \
+    -e ROCM_DRAFT=${ROCM_DRAFT:-} \
+    -e ROCM_STORE=${ROCM_STORE:-} \
+    -e ROCM_ARGS="${ROCM_ARGS:-}" \
     $DOCKER_OPTS \
         $LLAMA_DOCKER_IMAGE \
             "$@"

@@ -29,6 +29,11 @@ variable "GFX_VERSION" {
 variable "CACHEBUST" {
   default = "1"
 }
+# A rocm-hip checkout (https://github.com/CowboyTim/rocm-hip, with its perl-minijinja-xs submodule): the
+# Dockerfile's rocm-hip-build stage builds ROCm::Inference and rocm-inference-server from it
+variable "ROCM_HIP_CONTEXT" {
+  default = "../rocm-hip"
+}
 target "_common" {
   context = "."
   dockerfile = "Dockerfile"
@@ -36,6 +41,9 @@ target "_common" {
   networks = ["host"]
   buildkit = true
   target = "runtime"
+  contexts = {
+    rocm-hip-src = "${ROCM_HIP_CONTEXT}"
+  }
   args = {
     CACHEBUST = "${CACHEBUST}"
     LEMONADE_LLAMACPP_VERSION = "${LEMONADE_LLAMACPP_VERSION}"
