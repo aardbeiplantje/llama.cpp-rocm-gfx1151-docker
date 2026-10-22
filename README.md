@@ -68,8 +68,8 @@ MODELS_DIR=/path/to/models bash run.sh rocm-server Qwen3.8-Flash-Next-...-00001-
 
 `ROCM_MODEL` (a path or a file in `/models`), `ROCM_CTX` (32768), `ROCM_DRAFT` (an MTP draft head),
 `ROCM_STORE` (a KV block store directory, e.g. under `/dev/shm`) and `ROCM_ARGS` (more server options) are
-passed through by `run.sh`. Building needs a rocm-hip checkout as the `rocm-hip-src` build context:
-`ROCM_HIP_CONTEXT=../rocm-hip` by default (`git submodule update --init` there for perl-minijinja-xs).
+passed through by `run.sh`. The build clones rocm-hip's `main` (with its perl-minijinja-xs submodule); bump
+`CACHEBUST` to pick up new commits.
 
 Key env vars for `run.sh`: `MODELS_DIR` (mount at `/models`), `LLAMA_PRESETS` (override presets ini), `HF_HOME` / `HF_TOKEN` (model download cache); `HSA_FORCE_FINE_GRAIN_PCIE`, `HIP_LAUNCH_BLOCKING` and `AMD_SERIALIZE_KERNEL` are off unless set.
 

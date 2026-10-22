@@ -58,7 +58,7 @@ RUN \
     env JOBS=32 bash /llama-build/build_llama.cpp.sh && \
     mv build /llama
 
-# ROCm::Inference (https://github.com/CowboyTim/rocm-hip, the "rocm-hip-src" build context, see docker-bake.hcl):
+# ROCm::Inference (https://github.com/CowboyTim/rocm-hip):
 # libinference (kernels embedded), the Perl modules ROCm::Inference, Web::Route and Minijinja (with the Rust
 # minijinja C library), and the OpenAI-compatible rocm-inference-server, all under /opt/rocm-hip
 FROM base AS rocm-hip-build
@@ -71,7 +71,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN mkdir -p /opt/rocm \
     && tar -xzf /rocm.tar.gz -C /opt/rocm
 ENV ROCM_PATH=/opt/rocm
-COPY --from=rocm-hip-src . /src/rocm-hip
+# with the perl-minijinja-xs submodule (Minijinja's source); CACHEBUST makes a rebuild take new commits
+ARG CACHEBUST=1
+RUN git clone --depth=1 --single-branch -b main --recurse-submodules --shallow-submodules \
+        https://github.com/CowboyTim/rocm-hip.git /src/rocm-hip
 WORKDIR /src/rocm-hip
 RUN make -j32 install PREFIX=/opt/rocm-hip
 RUN cd perl-minijinja-xs \
