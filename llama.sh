@@ -16,8 +16,8 @@ export PATH=${ROCM_PATH}/bin:$PATH
 export HSA_OVERRIDE_GFX_VERSION=11.5.1
 export GGML_CUDA_ENABLE_UNIFIED_MEMORY=1
 export HIP_VISIBLE_DEVICES=0
-export HIP_LAUNCH_BLOCKING=1
-export AMD_SERIALIZE_KERNEL=1
+# HIP_LAUNCH_BLOCKING=1 / AMD_SERIALIZE_KERNEL=1 serialize every kernel launch (debugging, or a workaround for
+# GPU hangs): off unless set (run.sh passes them through)
 export GGML_HIP_FORCE_RS_GPU=1
 export GGML_HIP_FORCE_KV_GPU=1
 export GGML_HIP_ALLOC_GRAPH_RESERVE=2048
@@ -55,7 +55,7 @@ ROCM_HIP=${ROCM_HIP:-/opt/rocm-hip}
 start_rocm_inference() {
     local model=${ROCM_MODEL:?ROCM_MODEL=<model.gguf> (a path, or a file in /models) is required}
     [ -f "$model" ] || model=${M_DIR:-/models}/$model
-    # without the kernel-serializing debug switches exported above
+    # never with the kernel-serializing debug switches, even when set for llama-server
     env -u HIP_LAUNCH_BLOCKING -u AMD_SERIALIZE_KERNEL \
         PERL5LIB="$ROCM_HIP/perl5/lib/perl5${PERL5LIB:+:$PERL5LIB}" \
         perl "$ROCM_HIP/perl5/bin/rocm-inference-server" \
@@ -81,7 +81,7 @@ case "$SUBCMD" in
             exec "$@"
         fi
         "$LLAMA_SERVER" \
-            --models-preset "${L_INI:-/llamacpp_presets.ini}" \
+            --models-preset "${L_INI:-${PRESET_FILE:-/llamacpp_presets.ini}}" \
             --models-max 4 \
             --models-dir "${M_DIR:-/models}" \
             --models-autoload \

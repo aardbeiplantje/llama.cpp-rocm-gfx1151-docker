@@ -19,8 +19,9 @@ sub fixup {
     if($@){
         chomp(my $err = $@);
         print_error("[ERROR] request: $err");
-        $r->send_http_header;
+        # the status first: send_http_header sends it (the Lua side then keeps the original body)
         $r->status(500);
+        $r->send_http_header("text/plain");
         return OK;
     }
     return $r_ok;
@@ -43,11 +44,11 @@ sub handle_req {
     }
     $rb //= "{}";
     print_error("[INFO] REQUEST $method, header X-LLamaCPP-Id-slot: ".( $slot_id//"<no id_slot>"));
-    if(length($slot_id) and $slot_id =~ m/^\d+$/){
+    if(defined $slot_id and $slot_id =~ m/^\d+$/){
         eval {
             my $req = JSON::XS::decode_json($rb);
             $_json //= JSON::XS->new->utf8->allow_blessed->allow_unknown->allow_nonref->convert_blessed->canonical;
-            print_error("[INFO] REQUEST $method, header X-LLamaCPP-Id-slot: ".( $slot_id//"<no id_slot>").", model:$req->{model}");
+            print_error("[INFO] REQUEST $method, header X-LLamaCPP-Id-slot: ".( $slot_id//"<no id_slot>").", model:".($req->{model}//"<no model>"));
 
             do_magic_fixes($r, $req, $slot_id);
 
@@ -91,11 +92,18 @@ sub do_magic_fixes {
 
     $llm_req->{id_slot} = 0+$slot_id;
 
-    $llm_req->{messages}[0]{role} = "system";
-    $_->{role} = "user" for grep {$_->{role} eq "system"} ((@{$llm_req->{messages}})[1..$#{$llm_req->{messages}}]);
-
     my $conv_id = $llm_req->{conv_id} // "conv-" . time() . "-" . int(rand(1000000));
     $llm_req->{conv_id} = $conv_id;
+
+    my $msgs = $llm_req->{messages};
+    return unless ref $msgs eq 'ARRAY' and @$msgs;
+
+    # a system message only first (chat templates want that): later ones become user messages
+    $_->{role} = "user" for grep {($_->{role}//"") eq "system"} @{$msgs}[1..$#$msgs];
+
+    # the boilerplate below is moved out of a system prompt only, not out of a first user message
+    $msgs->[0]{role} = "system" if ($msgs->[0]{role}//"") eq "developer";
+    return unless ($msgs->[0]{role}//"") eq "system" and defined $msgs->[0]{content} and !ref $msgs->[0]{content};
 
     my $m = \$llm_req->{messages}[0]{content};
     my $model_env;

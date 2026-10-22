@@ -68,7 +68,7 @@ exec docker run \
     --tmpfs /tmp:rw,suid,exec,size=1G \
     --tmpfs /var/tmp:rw,suid,exec,size=1G \
     $([ -n "$MODELS_DIR"    ] && echo "-v $MODELS_DIR:/models:rw") \
-    $([ -n "$LLAMA_PRESETS" ] && echo "-v $LLAMA_PRESETS:/llama/llamacpp_presets.ini") \
+    $([ -n "$LLAMA_PRESETS" ] && echo "-v $LLAMA_PRESETS:/llamacpp_presets.ini:ro") \
     -v llama.cpp-data:/llama.cpp:rw \
     $([ -n "$HF_HOME" ] && echo "-v $HF_HOME:/hf:rw") \
     -e XDG_CACHE_HOME=${XDG_CACHE_HOME:-/dev/shm} \
@@ -79,7 +79,7 @@ exec docker run \
     -e MODEL_PATH=${MODEL_PATH:-/models} \
     -e MODELS_DIR=${MODELS_DIR:-} \
     -e LLAMA_PRESETS=${LLAMA_PRESETS:-} \
-    -e PRESET_FILE=${PRESET_FILE:-/llama/llamacpp_presets.ini} \
+    -e PRESET_FILE=${PRESET_FILE:-/llamacpp_presets.ini} \
     -e MODELS=${MODELS:-} \
     -e LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-/opt/rocm/lib:/llama/bin} \
     -e HSA_OVERRIDE_GFX_VERSION=${HSA_OVERRIDE_GFX_VERSION:-11.5.1} \
@@ -87,7 +87,9 @@ exec docker run \
     -e GGML_HIP_FORCE_RS_GPU=${GGML_HIP_FORCE_RS_GPU:-1} \
     -e GGML_HIP_FORCE_KV_GPU=${GGML_HIP_FORCE_KV_GPU:-1} \
     -e GGML_HIP_ALLOC_GRAPH_RESERVE=${GGML_HIP_ALLOC_GRAPH_RESERVE:-2048} \
-    -e HSA_FORCE_FINE_GRAIN_PCIE=${HSA_FORCE_FINE_GRAIN_PCIE:-1} \
+    $([ -n "$HSA_FORCE_FINE_GRAIN_PCIE" ] && echo "-e HSA_FORCE_FINE_GRAIN_PCIE=$HSA_FORCE_FINE_GRAIN_PCIE") \
+    $([ -n "$HIP_LAUNCH_BLOCKING" ] && echo "-e HIP_LAUNCH_BLOCKING=$HIP_LAUNCH_BLOCKING") \
+    $([ -n "$AMD_SERIALIZE_KERNEL" ] && echo "-e AMD_SERIALIZE_KERNEL=$AMD_SERIALIZE_KERNEL") \
     -e HSA_ENABLE_SDMA=${HSA_ENABLE_SDMA:-0} \
     -e ROCM_MODEL=${ROCM_MODEL:-} \
     -e ROCM_CTX=${ROCM_CTX:-32768} \

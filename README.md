@@ -71,7 +71,7 @@ MODELS_DIR=/path/to/models bash run.sh rocm-server Qwen3.8-Flash-Next-...-00001-
 passed through by `run.sh`. Building needs a rocm-hip checkout as the `rocm-hip-src` build context:
 `ROCM_HIP_CONTEXT=../rocm-hip` by default (`git submodule update --init` there for perl-minijinja-xs).
 
-Key env vars for `run.sh`: `MODELS_DIR` (mount at `/models`), `LLAMA_PRESETS` (override presets ini), `HF_HOME` / `HF_TOKEN` (model download cache).
+Key env vars for `run.sh`: `MODELS_DIR` (mount at `/models`), `LLAMA_PRESETS` (override presets ini), `HF_HOME` / `HF_TOKEN` (model download cache); `HSA_FORCE_FINE_GRAIN_PCIE`, `HIP_LAUNCH_BLOCKING` and `AMD_SERIALIZE_KERNEL` are off unless set.
 
 ```bash
 # Optional LiteLLM proxy on :4000 in front of llama-server :8000

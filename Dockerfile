@@ -56,8 +56,7 @@ RUN \
     mv $W llama.cpp && \
     cd llama.cpp && \
     env JOBS=32 bash /llama-build/build_llama.cpp.sh && \
-    mv build /llama && \
-    rm -rf $W
+    mv build /llama
 
 # ROCm::Inference (https://github.com/CowboyTim/rocm-hip, the "rocm-hip-src" build context, see docker-bake.hcl):
 # libinference (kernels embedded), the Perl modules ROCm::Inference, Web::Route and Minijinja (with the Rust
@@ -87,20 +86,29 @@ RUN cd perl/Web-Route \
     && perl Makefile.PL INSTALL_BASE=/opt/rocm-hip/perl5 \
     && make && make install
 
-FROM base AS runtime
-WORKDIR /llama
-COPY --from=base /rocm.tar.gz /
+# The ROCm runtime libraries only: the runtime image gets these, not the tarball (a lower layer keeps a
+# file even when a later one deletes it) or the build tools of base
+FROM base AS rocm-runtime
 RUN mkdir -p /opt/rocm \
     && tar -xzf /rocm.tar.gz -C /opt/rocm \
         --wildcards \
         "*/lib/*.so*" \
         "*/lib/rocblas/*" \
-        "*/lib/hipblaslt/*" \
-    && rm -f /rocm.tar.gz
+        "*/lib/hipblaslt/*"
+
+FROM debian:trixie-slim AS runtime
+WORKDIR /llama
+COPY --from=rocm-runtime /opt/rocm /opt/rocm
 COPY --from=builder /llama /llama
 COPY --from=rocm-hip-build /opt/rocm-hip /opt/rocm-hip
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    libcurl4 \
+    libssl3 \
+    libgomp1 \
+    libatomic1 \
+    perl \
+    curl \
     nginx \
     libnginx-mod-http-lua \
     libnginx-mod-http-perl \
@@ -113,6 +121,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     lua-cjson \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+# every shared library llama.cpp and ROCm::Inference need is here (the image no longer inherits base's packages)
+RUN ! LD_LIBRARY_PATH=/opt/rocm/lib:/llama/bin ldd /llama/bin/llama-server /llama/bin/*.so* \
+        /opt/rocm-hip/lib/*.so* $(find /opt/rocm-hip/perl5 -name '*.so') 2>/dev/null | grep 'not found'
 RUN ln -sf /dev/stdout /var/log/nginx/access.log \
     && ln -sf /dev/stderr /var/log/nginx/error.log
 ENV ROCM_PATH=/opt/rocm
