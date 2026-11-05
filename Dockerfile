@@ -26,12 +26,12 @@ RUN apt update && apt install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# ADD https://repo.amd.com/rocm/tarball/therock-dist-linux-gfx1151-7.13.0.tar.gz /tmp/rocm.tar.gz
+# ADD https://repo.amd.com/rocm/tarball/therock-dist-linux-gfx1151-10.1.0.tar.gz /tmp/rocm.tar.gz
 # this is on AWS S3 and cached badly
-# ADD https://therock-nightly-tarball.s3.amazonaws.com/therock-dist-linux-gfx1151-7.13.0a20260515.tar.gz /tmp/rocm.tar.gz
+# ADD https://therock-nightly-tarball.s3.amazonaws.com/therock-dist-linux-gfx1151-7.14.0a20260612.tar.gz /tmp/rocm.tar.gz
 # hence: curl
 RUN --mount=type=cache,target=/var/cache/downloads \
-    curl -qsSk -L https://therock-nightly-tarball.s3.amazonaws.com/therock-dist-linux-gfx1151-7.13.0a20260515.tar.gz \
+    curl -qsSk -L https://stable.repo.amd.com/rocm/core/tarball/therock-dist-linux-gfx1151-10.1.0.tar.gz \
         -z file -o /var/cache/downloads/rocm.tar.gz
 RUN --mount=type=cache,target=/var/cache/downloads \
     cp /var/cache/downloads/rocm.tar.gz /rocm.tar.gz
