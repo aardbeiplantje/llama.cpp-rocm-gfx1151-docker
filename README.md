@@ -54,9 +54,11 @@ bash run.sh tail
 ## ROCm::Inference next to llama.cpp
 
 The image also carries [rocm-hip](https://github.com/CowboyTim/rocm-hip)'s engine: `libinference` with the Perl
-modules ROCm::Inference, Web::Route and Minijinja, and `rocm-inference-server`, an OpenAI-compatible server for
+modules ROCm::Inference, Web::Route and Minijinja (via the `perl-minijinja-xs` XS extension), and `rocm-inference-server`, an OpenAI-compatible server for
 one model (streamed `reasoning_content` / `content`, tool calls). It listens on `/tmp/rocm-inference.sock`;
 nginx serves it at **`/rocm/v1/...`** with the same request fixups as llama-server's `/v1/...`.
+
+The `perl-minijinja-xs` Perl XS module provides low-level bindings to the Rust Minijinja C library (built via `cargo`), enabling fast template rendering from within Perl â it's the XS component that links Perl into the ROCm::Inference pipeline.
 
 ```bash
 # next to llama-server: llama.cpp at http://host:8000/v1, ROCm::Inference at http://host:8000/rocm/v1 with every
