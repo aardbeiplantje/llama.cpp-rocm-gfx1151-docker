@@ -59,14 +59,21 @@ one model (streamed `reasoning_content` / `content`, tool calls). It listens on 
 nginx serves it at **`/rocm/v1/...`** with the same request fixups as llama-server's `/v1/...`.
 
 ```bash
-# next to llama-server: llama.cpp at http://host:8000/v1, ROCm::Inference at http://host:8000/rocm/v1
+# next to llama-server: llama.cpp at http://host:8000/v1, ROCm::Inference at http://host:8000/rocm/v1 with every
+# model in /models (GET /rocm/v1/models), each loaded when a request's "model" names it
+MODELS_DIR=/path/to/models bash run.sh server
+
+# one model, loaded at start
 ROCM_MODEL=Qwen3.5-4B-ROCMFP4.gguf MODELS_DIR=/path/to/models bash run.sh server
 
-# ROCm::Inference only
+# ROCm::Inference only (a model, or none: all of /models)
 MODELS_DIR=/path/to/models bash run.sh rocm-server Qwen3.8-Flash-Next-...-00001-of-00003.gguf
 ```
 
-`ROCM_MODEL` (a path or a file in `/models`), `ROCM_CTX` (default: the model's trained context from the GGUF, at most 131072), `ROCM_DRAFT` (an MTP draft head),
+Without `ROCM_MODEL` the server takes the models of `ROCM_MODELS_DIR` (default `/models`): nothing is loaded until a
+request names one, and it unloads the least recently used idle ones when memory runs short (what llama-server holds
+counts); `POST /rocm/models/load` / `/rocm/models/unload` with `{"model": id}` as llama.cpp's router.
+`ROCM_INFERENCE=0` leaves it out of `run.sh server`. `ROCM_MODEL` (a path or a file in `/models`), `ROCM_CTX` (default: the model's trained context from the GGUF, at most 131072), `ROCM_DRAFT` (an MTP draft head),
 `ROCM_STORE` (a KV block store directory, e.g. under `/dev/shm`) and `ROCM_ARGS` (more server options) are
 passed through by `run.sh`. The build clones rocm-hip's `main` (with its perl-minijinja-xs submodule); bump
 `CACHEBUST` to pick up new commits.
