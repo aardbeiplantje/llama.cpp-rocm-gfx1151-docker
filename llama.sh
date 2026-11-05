@@ -61,7 +61,7 @@ start_rocm_inference() {
         perl "$ROCM_HIP/perl5/bin/rocm-inference-server" \
             --model "$model" \
             --listen /tmp/rocm-inference.sock \
-            --ctx "${ROCM_CTX:-32768}" \
+            ${ROCM_CTX:+--ctx "$ROCM_CTX"} \
             ${ROCM_DRAFT:+--draft "$ROCM_DRAFT"} \
             ${ROCM_STORE:+--store "$ROCM_STORE"} \
             ${ROCM_ARGS:-} &

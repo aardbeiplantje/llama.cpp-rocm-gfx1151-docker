@@ -92,7 +92,7 @@ exec docker run \
     $([ -n "$AMD_SERIALIZE_KERNEL" ] && echo "-e AMD_SERIALIZE_KERNEL=$AMD_SERIALIZE_KERNEL") \
     -e HSA_ENABLE_SDMA=${HSA_ENABLE_SDMA:-0} \
     -e ROCM_MODEL=${ROCM_MODEL:-} \
-    -e ROCM_CTX=${ROCM_CTX:-32768} \
+    -e ROCM_CTX=${ROCM_CTX:-} \
     -e ROCM_DRAFT=${ROCM_DRAFT:-} \
     -e ROCM_STORE=${ROCM_STORE:-} \
     -e ROCM_ARGS="${ROCM_ARGS:-}" \

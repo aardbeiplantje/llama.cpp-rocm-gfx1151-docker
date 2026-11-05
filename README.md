@@ -66,7 +66,7 @@ ROCM_MODEL=Qwen3.5-4B-ROCMFP4.gguf MODELS_DIR=/path/to/models bash run.sh server
 MODELS_DIR=/path/to/models bash run.sh rocm-server Qwen3.8-Flash-Next-...-00001-of-00003.gguf
 ```
 
-`ROCM_MODEL` (a path or a file in `/models`), `ROCM_CTX` (32768), `ROCM_DRAFT` (an MTP draft head),
+`ROCM_MODEL` (a path or a file in `/models`), `ROCM_CTX` (default: the model's trained context from the GGUF, at most 131072), `ROCM_DRAFT` (an MTP draft head),
 `ROCM_STORE` (a KV block store directory, e.g. under `/dev/shm`) and `ROCM_ARGS` (more server options) are
 passed through by `run.sh`. The build clones rocm-hip's `main` (with its perl-minijinja-xs submodule); bump
 `CACHEBUST` to pick up new commits.
