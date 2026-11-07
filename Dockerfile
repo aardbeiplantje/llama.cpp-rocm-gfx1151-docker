@@ -64,7 +64,7 @@ RUN \
         echo "llama.cpp: not built (BUILD_LLAMA=0)" && mkdir -p /llama/bin; \
     fi
 
-# ROCm::Inference (https://github.com/CowboyTim/rocm-hip):
+# ROCm::Inference (https://github.com/aardbeiplantje/purhie):
 # libinference (kernels embedded), the Perl modules ROCm::Inference, Web::Route and Minijinja (with the Rust
 # minijinja C library), and the OpenAI-compatible rocm-inference-server, all under /opt/rocm-hip
 FROM base AS rocm-hip-build
@@ -80,7 +80,7 @@ ENV ROCM_PATH=/opt/rocm
 # with the perl-minijinja-xs submodule (Minijinja's source); CACHEBUST makes a rebuild take new commits
 ARG CACHEBUST=1
 RUN git clone --depth=1 --single-branch -b main --recurse-submodules --shallow-submodules \
-        https://github.com/CowboyTim/rocm-hip.git /src/rocm-hip
+        https://github.com/aardbeiplantje/purhie.git /src/rocm-hip
 WORKDIR /src/rocm-hip
 # Minijinja first: its C library goes into /opt/rocm-hip/lib, which the install below creates as well
 RUN mkdir -p /opt/rocm-hip/lib
