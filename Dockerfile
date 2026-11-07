@@ -46,17 +46,23 @@ RUN mkdir -p /opt/rocm \
 ARG CACHEBUST=1
 #RUN git clone --depth=1 --single-branch -b nemotron-mtp-rocmfp4-strix https://github.com/aardbeiplantje/rocmfp4-llama.git rocmfp4-llama.cpp.git
 #RUN git clone --depth=1 --single-branch -b master https://github.com/ggml-org/llama.cpp.git llama.cpp.git
-RUN git clone --depth=1 --single-branch -b nemotron-mtp-rocmfp4-strix https://github.com/aardbeiplantje/ROCmFPX.git ROCmFPX.git
+# llama.cpp (ROCmFPX) is not built for now: BUILD_LLAMA=1 builds it (the image then has llama-server)
+ARG BUILD_LLAMA=0
+RUN if [ "$BUILD_LLAMA" = 1 ]; then git clone --depth=1 --single-branch -b nemotron-mtp-rocmfp4-strix https://github.com/aardbeiplantje/ROCmFPX.git ROCmFPX.git; fi
 ENV ROCM_PATH=/opt/rocm
 ENV LD_LIBRARY_PATH=${ROCM_PATH}/lib
 ENV PATH=${ROCM_PATH}/bin:$PATH
 ARG W=ROCmFPX.git
 COPY build_llama.cpp.sh /llama-build
 RUN \
-    mv $W llama.cpp && \
-    cd llama.cpp && \
-    env JOBS=32 bash /llama-build/build_llama.cpp.sh && \
-    mv build /llama
+    if [ "$BUILD_LLAMA" = 1 ]; then \
+        mv $W llama.cpp && \
+        cd llama.cpp && \
+        env JOBS=32 bash /llama-build/build_llama.cpp.sh && \
+        mv build /llama; \
+    else \
+        echo "llama.cpp: not built (BUILD_LLAMA=0)" && mkdir -p /llama/bin; \
+    fi
 
 # ROCm::Inference (https://github.com/CowboyTim/rocm-hip):
 # libinference (kernels embedded), the Perl modules ROCm::Inference, Web::Route and Minijinja (with the Rust
