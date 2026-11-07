@@ -70,6 +70,7 @@ exec docker run \
     --tmpfs /var/tmp:rw,suid,exec,size=1G \
     $([ -n "$MODELS_DIR"    ] && echo "-v $MODELS_DIR:/models:rw") \
     $([ -n "$LLAMA_PRESETS" ] && echo "-v $LLAMA_PRESETS:/llamacpp_presets.ini:ro") \
+    $([ -n "$ROCM_STORE_DIR" ] && echo "-v $ROCM_STORE_DIR:/kvstore:rw") \
     -v llama.cpp-data:/llama.cpp:rw \
     $([ -n "$HF_HOME" ] && echo "-v $HF_HOME:/hf:rw") \
     -e XDG_CACHE_HOME=${XDG_CACHE_HOME:-/dev/shm} \
@@ -97,7 +98,7 @@ exec docker run \
     -e ROCM_INFERENCE=${ROCM_INFERENCE:-1} \
     -e ROCM_CTX=${ROCM_CTX:-} \
     -e ROCM_DRAFT=${ROCM_DRAFT:-} \
-    -e ROCM_STORE=${ROCM_STORE:-} \
+    -e ROCM_STORE=${ROCM_STORE:-$([ -n "$ROCM_STORE_DIR" ] && echo /kvstore)} \
     -e ROCM_ARGS="${ROCM_ARGS:-}" \
     $DOCKER_OPTS \
         $LLAMA_DOCKER_IMAGE \

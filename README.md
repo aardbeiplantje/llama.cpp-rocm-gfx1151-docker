@@ -75,9 +75,10 @@ MODELS_DIR=/path/to/models bash run.sh rocm-server Qwen3.8-Flash-Next-...-00001-
 Without `ROCM_MODEL` the server takes the models of `ROCM_MODELS_DIR` (default `/models`): nothing is loaded until a
 request names one, and it unloads the least recently used idle ones when memory runs short (what llama-server holds
 counts); `POST /rocm/models/load` / `/rocm/models/unload` with `{"model": id}` as llama.cpp's router.
-`ROCM_INFERENCE=0` leaves it out of `run.sh server`. `ROCM_MODEL` (a path or a file in `/models`), `ROCM_CTX` (default: the model's trained context from the GGUF, at most 131072), `ROCM_DRAFT` (an MTP draft head),
-`ROCM_STORE` (a KV block store directory, e.g. under `/dev/shm`) and `ROCM_ARGS` (more server options) are
-passed through by `run.sh`. The build clones rocm-hip's `main` (with its perl-minijinja-xs submodule); bump
+`ROCM_INFERENCE=0` leaves it out of `run.sh server`. `ROCM_MODEL` (a path or a file in `/models`), `ROCM_CTX` (default: the model's trained context from the GGUF, within the KV budget), `ROCM_DRAFT` (an MTP draft head),
+`ROCM_STORE_DIR` (a host directory for the KV block store: mounted at `/kvstore` and passed as `ROCM_STORE=/kvstore`;
+it survives restarts, unlike `/dev/shm`), `ROCM_STORE` (a store directory inside the container, instead) and `ROCM_ARGS`
+(more server options) are passed through by `run.sh`. The build clones rocm-hip's `main` (with its perl-minijinja-xs submodule); bump
 `CACHEBUST` to pick up new commits.
 
 Key env vars for `run.sh`: `MODELS_DIR` (mount at `/models`), `LLAMA_PRESETS` (override presets ini), `HF_HOME` / `HF_TOKEN` (model download cache); `HSA_FORCE_FINE_GRAIN_PCIE`, `HIP_LAUNCH_BLOCKING` and `AMD_SERIALIZE_KERNEL` are off unless set.
