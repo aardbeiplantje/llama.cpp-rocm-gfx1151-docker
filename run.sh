@@ -55,6 +55,7 @@ exec docker run \
     --network=host \
     --ulimit memlock=-1:-1 \
     --ulimit stack=67108864:67108864 \
+    --ulimit nofile=65536:65536 \
     --group-add=video \
     --ipc=host \
     --cap-add=SYS_PTRACE \
