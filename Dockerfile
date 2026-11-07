@@ -82,12 +82,14 @@ ARG CACHEBUST=1
 RUN git clone --depth=1 --single-branch -b main --recurse-submodules --shallow-submodules \
         https://github.com/CowboyTim/rocm-hip.git /src/rocm-hip
 WORKDIR /src/rocm-hip
-RUN make -j32 install PREFIX=/opt/rocm-hip
+# Minijinja first: its C library goes into /opt/rocm-hip/lib, which the install below creates as well
+RUN mkdir -p /opt/rocm-hip/lib
 RUN cd perl-minijinja-xs \
     && bash scripts/setup-minijinja.sh \
     && cp minijinja/target/release/libminijinja_cabi.so /opt/rocm-hip/lib/ \
     && MINIJINJA_RPATH=/opt/rocm-hip/lib perl Makefile.PL INSTALL_BASE=/opt/rocm-hip/perl5 \
     && make && make install
+RUN make -j32 install PREFIX=/opt/rocm-hip
 RUN cd perl/ROCm-Inference \
     && ROCM_INFERENCE_PREFIX=/opt/rocm-hip perl Makefile.PL INSTALL_BASE=/opt/rocm-hip/perl5 \
     && make && make install
@@ -107,11 +109,11 @@ RUN mkdir -p /opt/rocm \
 
 FROM debian:trixie-slim AS runtime
 WORKDIR /llama
-COPY --from=rocm-runtime /opt/rocm /opt/rocm
-COPY --from=builder /llama /llama
-COPY --from=rocm-hip-build /opt/rocm-hip /opt/rocm-hip
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# nginx and the runtime's packages: their own layer, before the copies from the build stages (a rocm-hip or llama
+# change does not reinstall them); --build-arg APT_CACHEBUST=<new value> to refresh them
+ARG APT_CACHEBUST=1
+# (the echo makes the value part of this RUN's cache key: a new value runs apt again)
+RUN echo "apt: $APT_CACHEBUST" && apt-get update && apt-get install -y --no-install-recommends \
     libcurl4 \
     libssl3 \
     libgomp1 \
@@ -130,6 +132,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     lua-cjson \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+COPY --from=rocm-runtime /opt/rocm /opt/rocm
+COPY --from=builder /llama /llama
+COPY --from=rocm-hip-build /opt/rocm-hip /opt/rocm-hip
+
 # every shared library llama.cpp and ROCm::Inference need is here (the image no longer inherits base's packages)
 RUN ! LD_LIBRARY_PATH=/opt/rocm/lib:/llama/bin ldd /llama/bin/llama-server /llama/bin/*.so* \
         /opt/rocm-hip/lib/*.so* $(find /opt/rocm-hip/perl5 -name '*.so') 2>/dev/null | grep 'not found'
