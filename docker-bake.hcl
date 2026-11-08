@@ -36,6 +36,11 @@ target "_common" {
   networks = ["host"]
   buildkit = true
   target = "runtime"
+  # this project's git directory for /version (the Dockerfile's version stage; .dockerignore keeps .git out of
+  # the main context)
+  contexts = {
+    docker-git = ".git"
+  }
   args = {
     CACHEBUST = "${CACHEBUST}"
     LEMONADE_LLAMACPP_VERSION = "${LEMONADE_LLAMACPP_VERSION}"

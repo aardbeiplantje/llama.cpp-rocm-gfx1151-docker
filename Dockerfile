@@ -81,6 +81,9 @@ ENV ROCM_PATH=/opt/rocm
 ARG CACHEBUST=1
 RUN git clone --depth=1 --single-branch -b main --recurse-submodules --shallow-submodules \
         https://github.com/aardbeiplantje/purhie.git /src/rocm-hip
+# the commit built, for /version (the version stage)
+RUN git -C /src/rocm-hip log -1 --date=iso-strict --format='rocm-hip %H %cd %s' > /rocm-hip.version \
+    && git -C /src/rocm-hip submodule status | sed 's/^[ +-]*/  submodule /' >> /rocm-hip.version
 WORKDIR /src/rocm-hip
 # Minijinja first: its C library goes into /opt/rocm-hip/lib, which the install below creates as well
 RUN mkdir -p /opt/rocm-hip/lib
@@ -106,6 +109,18 @@ RUN mkdir -p /opt/rocm \
         "*/lib/*.so*" \
         "*/lib/rocblas/*" \
         "*/lib/hipblaslt/*"
+
+# /version: the commits of this project (its .git, the bake file's named context docker-git: .dockerignore keeps
+# .git out of the main context) and of rocm-hip. Its own stage, copied last: a new commit here rebuilds only that
+FROM base AS version
+COPY --from=rocm-hip-build /rocm-hip.version /rocm-hip.version
+RUN --mount=type=bind,from=docker-git,target=/docker-git \
+    { git -c safe.directory='*' --git-dir=/docker-git log -1 --date=iso-strict \
+          --format='llama.cpp-rocm-gfx1151-docker %H %cd %s' \
+      || echo 'llama.cpp-rocm-gfx1151-docker unknown'; \
+      cat /rocm-hip.version; \
+      echo "built $(date -u +%Y-%m-%dT%H:%M:%SZ)"; } > /version \
+    && cat /version
 
 FROM debian:trixie-slim AS runtime
 WORKDIR /llama
@@ -171,4 +186,5 @@ ENV HF_HUB_DISABLE_XET=1
 ENV HF_HUB_CACHE=/hf/hub
 ENV HF_HOME=/hf
 ENV PERL5LIB=/opt/rocm-hip/perl5/lib/perl5
+COPY --from=version /version /version
 ENTRYPOINT ["/llama.sh"]

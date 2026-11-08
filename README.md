@@ -32,6 +32,10 @@ docker buildx bake -f docker-bake.hcl _local
 docker buildx bake -f docker-bake.hcl release
 ```
 
+The image's `/version` names the commits it was built from: this project's and rocm-hip's (with its
+submodule), and the build time: `docker exec llama cat /version`. The bake file passes this project's `.git` as
+the named context `docker-git`; a plain `docker build` needs `--build-context docker-git=.git`.
+
 ## Run
 
 ```bash
