@@ -88,26 +88,31 @@ case "$SUBCMD" in
         if [ "$1" = "bash" ] || [ "$1" = "/bin/bash" ]; then
             exec "$@"
         fi
-        "$LLAMA_SERVER" \
-            --models-preset "${L_INI:-${PRESET_FILE:-/llamacpp_presets.ini}}" \
-            --models-max 4 \
-            --models-dir "${M_DIR:-/models}" \
-            --models-autoload \
-            --metrics \
-            --slot-save-path "${S_DIR:-/llama.cpp/slots}" \
-            --slots \
-            --cache-idle-slots \
-            --slot-prompt-similarity 0.0 \
-            --log-timestamps \
-            --log-prefix \
-            --log-colors on \
-            -fit off \
-            --embeddings \
-            --split-mode none \
-            --no-webui \
-            --host /tmp/llama.sock \
-            --timeout 3600 \
-            "$@" &
+        # llama-server only when the image has it (BUILD_LLAMA=1); else ROCm::Inference alone
+        if [ -x "$LLAMA_SERVER" ]; then
+            "$LLAMA_SERVER" \
+                --models-preset "${L_INI:-${PRESET_FILE:-/llamacpp_presets.ini}}" \
+                --models-max 4 \
+                --models-dir "${M_DIR:-/models}" \
+                --models-autoload \
+                --metrics \
+                --slot-save-path "${S_DIR:-/llama.cpp/slots}" \
+                --slots \
+                --cache-idle-slots \
+                --slot-prompt-similarity 0.0 \
+                --log-timestamps \
+                --log-prefix \
+                --log-colors on \
+                -fit off \
+                --embeddings \
+                --split-mode none \
+                --no-webui \
+                --host /tmp/llama.sock \
+                --timeout 3600 \
+                "$@" &
+        else
+            echo "llama.sh: no $LLAMA_SERVER (the image was built with BUILD_LLAMA=0): ROCm::Inference only, at /rocm/v1/" >&2
+        fi
           # also ROCm::Inference next to it, at /rocm/v1/... (ROCM_INFERENCE=0: not)
           [ "${ROCM_INFERENCE:-1}" != 0 ] && start_rocm_inference
           set -x
