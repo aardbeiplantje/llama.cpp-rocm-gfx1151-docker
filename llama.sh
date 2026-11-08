@@ -73,6 +73,23 @@ start_rocm_inference() {
             ${ROCM_DRAFT:+--draft "$ROCM_DRAFT"} \
             ${ROCM_STORE:+--store "$ROCM_STORE"} \
             ${ROCM_ARGS:-} &
+    ROCM_PID=$!
+}
+
+# nginx in the foreground of this shell, which stays PID 1: docker stop's SIGTERM reaches only PID 1, and the
+# processes left when it exits are SIGKILLed. So the signal goes on to nginx and the servers next to it
+# (rocm-inference-server writes the KV store snapshots it holds in memory on SIGTERM), and this waits for them
+serve_nginx() {
+    set -x
+    /usr/sbin/nginx -c /nginx.conf -g "daemon off;" &
+    { set +x; } 2>/dev/null
+    local nginx=$! rc
+    trap 'kill -TERM $nginx ${ROCM_PID:-} ${LLAMA_PID:-} 2>/dev/null' TERM INT
+    wait $nginx; rc=$?
+    while kill -0 $nginx 2>/dev/null; do wait $nginx; rc=$?; done  # (a signal ends a wait early)
+    kill -TERM ${ROCM_PID:-} ${LLAMA_PID:-} 2>/dev/null  # nginx is gone: the servers too
+    wait
+    exit $rc
 }
 
 # --- Subcommand dispatch ---
@@ -110,13 +127,13 @@ case "$SUBCMD" in
                 --host /tmp/llama.sock \
                 --timeout 3600 \
                 "$@" &
+            LLAMA_PID=$!
         else
             echo "llama.sh: no $LLAMA_SERVER (the image was built with BUILD_LLAMA=0): ROCm::Inference only, at /rocm/v1/" >&2
         fi
           # also ROCm::Inference next to it, at /rocm/v1/... (ROCM_INFERENCE=0: not)
           [ "${ROCM_INFERENCE:-1}" != 0 ] && start_rocm_inference
-          set -x
-          exec /usr/sbin/nginx -c /nginx.conf -g "daemon off;"
+          serve_nginx
         ;;
 
     # ---- rocm-server: ROCm::Inference only (no llama-server), at /rocm/v1/... ----
@@ -124,8 +141,7 @@ case "$SUBCMD" in
         shift
         ROCM_MODEL=${1:-${ROCM_MODEL:-}}
         start_rocm_inference
-        set -x
-        exec /usr/sbin/nginx -c /nginx.conf -g "daemon off;"
+        serve_nginx
         ;;
 
     # ---- cli: interactive chat ----
