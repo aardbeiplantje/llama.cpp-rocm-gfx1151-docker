@@ -100,7 +100,7 @@ exec docker run \
     -e ROCM_DRAFT=${ROCM_DRAFT:-} \
     -e ROCM_STORE=${ROCM_STORE:-$([ -n "$ROCM_STORE_DIR" ] && echo /kvstore)} \
     -e ROCM_ARGS="${ROCM_ARGS:-}" \
-    -e QMATVEC_PREFILL_SPLIT_VARIANT=${QMATVEC_PREFILL_SPLIT_VARIANT:-1} \
+    $([ -n "$QMATVEC_PREFILL_SPLIT_VARIANT" ] && echo "-e QMATVEC_PREFILL_SPLIT_VARIANT=$QMATVEC_PREFILL_SPLIT_VARIANT") \
     $DOCKER_OPTS \
         $LLAMA_DOCKER_IMAGE \
             "$@"
