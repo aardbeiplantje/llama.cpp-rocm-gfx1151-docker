@@ -24,6 +24,11 @@ The ROCm toolchain comes from the AMD "Therock" nightly tarball for gfx1151, dow
 # Build local image (local/ai/llama.cpp-gfx1151:latest)
 docker buildx bake -f docker-bake.hcl _local
 
+# Build through the watcher (run in the user's shell, not by the agent): ./build-watch.sh waits for .build-trigger, then runs
+# docker buildx bake --pull and appends the output to build-watch.log. Start a build with the touch below and wait for
+# "done, exit N" in build-watch.log (the trigger file is removed when a build starts, so a touch during a build queues the next)
+touch .build-trigger
+
 # Release: push ghcr.io/ai/llama.cpp-gfx1151:latest with provenance + SBOM attestations
 docker buildx bake -f docker-bake.hcl release
 
