@@ -27,7 +27,7 @@ variable "GFX_VERSION" {
   default = "-gfx1151"
 }
 variable "CACHEBUST" {
-  default = "2026-11-14"
+  default = "2026-11-14-2"
 }
 target "_common" {
   context = "."
