@@ -23,6 +23,7 @@ RUN apt update && apt install -y --no-install-recommends \
     spirv-headers \
     curl \
     perl \
+    zlib1g-dev \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
