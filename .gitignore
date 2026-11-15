@@ -14,3 +14,6 @@ llama.cpp/build
 
 # Test cache directories
 Llama/cache_*/
+
+# Build watcher output (build-watch.sh)
+build-watch.log
