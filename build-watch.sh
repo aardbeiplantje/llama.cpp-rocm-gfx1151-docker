@@ -16,7 +16,7 @@ while :; do
         rm -f "$trigger"
         {
             echo "== $(date '+%F %T') docker buildx bake --pull"
-            docker buildx bake --pull 2>&1
+            CACHEBUST=$(date +%s) docker buildx bake --pull 2>&1
             rc=$?
             echo "== $(date '+%F %T') done, exit $rc"
         } 2>&1 | tee -a "$log"
